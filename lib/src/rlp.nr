@@ -229,10 +229,3 @@ fn strict_if(pred: bool, x: Field, y: Field) -> Field
     let pred_f = pred as Field;
     pred_f*x + (1-pred_f)*y
 }
-
-fn comptime_strict_if(pred: comptime bool, x: comptime Field, y: comptime Field) -> comptime Field
-{
-    let pred_f = pred as Field;
-    pred_f*x + (1-pred_f)*y
-}
-
