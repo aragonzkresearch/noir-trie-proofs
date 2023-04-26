@@ -7,6 +7,44 @@ global MAX_FIELDS: comptime Field = 17;
 global IS_STRING: comptime Field = 0;
 global IS_LIST: comptime Field = 1;
 
+// RLP header struct obtained from length decoding
+struct RLP_Header
+{
+    offset: Field, // Offset of first (RLP-encoded) element
+    length: Field, // Length of RLP-encoded object starting from the above offset
+    data_type: Field // IS_STRING or IS_LIST
+}
+
+// Useful methods
+impl RLP_Header
+{
+    // RLP header constructor
+    fn new(offset: Field, length: Field, data_type: Field) -> Self
+    {
+	RLP_Header {offset, length, data_type}
+    }
+}
+
+// RLP list struct represented by the offsets and lengths of the fields together with
+// the total number of fields.
+struct RLP_List<NUM_FIELDS>
+{
+    offset: [Field; NUM_FIELDS],
+    length: [Field; NUM_FIELDS],
+    typ: [Field; NUM_FIELDS],
+    // Number of fields
+    num_fields: Field
+}
+
+impl<NUM_FIELDS> RLP_List<NUM_FIELDS>
+{
+    // RLP list constructor
+    fn new(offset: [Field; NUM_FIELDS], length: [Field; NUM_FIELDS], typ: [Field; NUM_FIELDS], num_fields: Field) -> Self
+    {
+	RLP_List {offset, length, typ, num_fields}
+    }
+}
+
 fn data_len<N>(arr: [u8; N], lenlen: Field) -> Field
 {
     let mut out = 0;
@@ -21,15 +59,16 @@ fn data_len<N>(arr: [u8; N], lenlen: Field) -> Field
     out
 }
 
-fn decode_len<N>(arr: [u8; N]) -> (Field, Field, Field)
+fn decode_len<N>(arr: [u8; N]) -> RLP_Header
 {
     let prefix = arr[0];
 
+    // Prefix range predicates
     let prefix_p1 = (prefix < 0x80);
     let prefix_p2 = (prefix < 0xb8);
     let prefix_p3 = (prefix < 0xc0);
     let prefix_p4 = (prefix < 0xf8);
-        
+    
     let offset = strict_if(prefix_p1,
 			   0,
 			   strict_if(prefix_p2,
@@ -53,7 +92,134 @@ fn decode_len<N>(arr: [u8; N]) -> (Field, Field, Field)
     
     let data_typ = (prefix >= 0xc0) as Field;
 
-    let out = (offset, len, data_typ);
+    RLP_Header::new(offset, len, data_typ)
+}
+
+// RLP list decoder
+// Decodes one level at a time by returning the number of (outer) fields,
+// the offsets of the fields, their lengths and their types (IS_STRING or IS_LIST).
+fn decode1<N, NUM_FIELDS>(input: [u8; N])
+			  -> RLP_List<NUM_FIELDS>
+{
+    let mut num_fields: Field = 0; // Number of fields
+    let mut dec_off = [0; NUM_FIELDS]; // Decoded offsets
+    let mut dec_len = [0; NUM_FIELDS]; // Decoded lengths
+    let mut dec_typ = [0; NUM_FIELDS]; // Decoded types
+
+    let RLP_Header {offset, length: payload_len, data_type: input_typ} = decode_len(input);
+    let total_len = payload_len + offset;
+
+    constrain input_typ == IS_LIST; // Should be dealing with a list
+    constrain (total_len as u64) <= (input.len() as u64); // Payload should be fully contained in input array
+
+    let mut cur_field_ptr = 0; // Field byte cursor
+    let mut cur_field_total_len = 0; // Length of current field (including header)
+
+    for i in 0..input.len()
+    {
+	let range_p = ((offset as u64) <= (i as u64)) & ((i as u64) < (total_len as u64)); // Index range predicate
+	let header_read_p = range_p & (cur_field_total_len == 0); // 'Header read' predicate
+
+	// If header needs to be read, we need to decode its length
+	let header: [u8; MAX_LEN_IN_BYTES + 1] = u8_take_with_offset(input, i);
+	let RLP_Header {offset: field_off, length: field_len, data_type: field_typ} = decode_len(header);
+
+	// If in 'header read' mode, take note of total length of payload (i.e. including offset).
+	cur_field_total_len = (header_read_p as Field)*(field_len + field_off) + (1 - header_read_p as Field)* cur_field_total_len;
+	
+	// Place these in output arrays if necessary.
+	for j in 0..NUM_FIELDS
+	{
+	    let index_p = (range_p & header_read_p & (j == num_fields)) as Field;
+	    dec_off[j] = index_p * (i + field_off) + (1-index_p) * dec_off[j];
+	    dec_len[j] = index_p * field_len + (1-index_p)* dec_len[j];
+	    dec_typ[j] = index_p * field_typ + (1-index_p)*dec_typ[j];
+	}
+	
+	// Increment ptr if wihin range and not in 'header read' mode
+	cur_field_ptr += (range_p as Field)*(1 - header_read_p as Field);
+
+	// If we are done with a field (i.e. cur_field_ptr == cur_field_total_len),
+	let field_end_p = range_p & (cur_field_ptr == cur_field_total_len - 1);
+	// reset field ptr and increment field number.
+	// Only do this if we are within range!
+	cur_field_ptr = (1 - field_end_p as Field) * cur_field_ptr;
+	cur_field_total_len = (1 - field_end_p as Field)*cur_field_total_len;
+	num_fields += field_end_p as Field;
+
+	// Ensure number of fields is not too big
+	constrain (num_fields as u64) <= (NUM_FIELDS as u64);
+    }
+
+    RLP_List::new(dec_off, dec_len, dec_typ, num_fields)
+}
+
+#[test]
+fn rlp_decode_test()
+{
+    // Decode empty list
+    let empty_list: RLP_List<MAX_FIELDS> = decode1([0xc0]);
+    
+    constrain empty_list.num_fields == 0;
+    
+    let input = [ 0xc9, 0x83, 0x63, 0x61, 0x74, 0x83, 0x64, 0x6f, 0x68, 0, 0 ];
+    let output: RLP_List<MAX_FIELDS> = decode1(input);
+    
+    constrain output.num_fields == 3;
+    // Offsets
+    constrain output.offset == [2,6,9,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
+    // // Lengths
+    constrain output.length == [3,3,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
+
+    let input1 = [249,2,17,160,10,210,58,71,229,91,254,185,245,139,35,127,191,50,125,165,19,165,59,86,127,77,226,197,94,143,9,69,104,149,113,39,160,164,115,165,166,228,180,44,203,222,52,48,157,214,190,69,130,116,84,133,170,215,193,212,152,106,149,100,253,145,220,246,94,160,69,11,1,238,164,195,225,91,51,198,134,50,21,34,253,120,157,26,173,81,148,24,94,179,165,5,99,85,90,78,104,180,160,82,128,145,254,48,73,106,165,234,223,46,5,168,79,141,218,64,98,200,87,199,28,213,222,164,182,145,219,253,186,121,39,160,167,139,46,219,193,195,174,240,47,40,188,121,97,50,227,220,35,99,122,36,94,78,156,78,197,54,232,163,249,213,16,58,160,111,180,73,26,200,238,6,49,66,159,230,23,226,13,10,230,7,51,103,45,139,187,57,125,86,1,146,77,200,196,223,158,160,55,41,196,37,89,112,4,6,183,246,239,121,175,146,171,71,19,99,239,56,75,116,235,20,239,208,243,25,211,222,248,120,160,203,87,65,73,168,197,46,86,209,173,204,46,232,157,204,145,75,151,105,166,72,142,173,255,186,120,43,121,104,228,130,134,160,150,115,130,186,247,99,108,21,244,243,60,208,96,34,93,32,175,77,181,18,59,49,192,153,255,123,231,108,251,75,134,92,160,78,107,27,31,43,92,213,101,63,87,83,248,163,19,104,103,84,248,119,180,32,209,82,52,250,148,101,219,76,194,160,125,160,83,37,183,243,189,9,79,122,28,120,150,139,190,225,222,184,206,225,117,233,244,162,244,212,38,220,37,129,215,25,93,53,160,229,6,255,207,78,120,107,238,212,128,106,189,84,39,136,172,149,67,89,238,163,122,88,90,149,80,59,121,249,7,238,1,160,81,214,156,64,149,165,65,36,216,223,167,73,213,180,230,230,32,106,193,147,176,40,93,119,210,13,1,159,16,112,114,103,160,211,15,4,49,74,86,24,146,109,246,80,207,194,97,226,153,241,94,43,233,192,2,152,171,150,86,26,250,234,179,74,156,160,175,157,156,73,109,26,48,12,182,175,211,173,181,241,131,247,105,98,255,101,7,227,21,63,78,41,155,58,231,222,15,141,160,219,213,163,116,191,119,232,215,182,77,130,102,90,48,66,197,228,202,43,169,232,246,11,23,100,50,211,205,202,115,60,49,128];
+
+    let output1: RLP_List<MAX_FIELDS> = decode1(input1);
+
+    constrain output1.num_fields == 17;
+    constrain output1.offset == [4, 37, 70, 103, 136, 169, 202, 235, 268, 301, 334, 367, 400, 433, 466, 499, 532];
+    constrain output1.length == [32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 0];
+    constrain output1.typ == [0; MAX_FIELDS];
+}
+
+
+#[test]
+fn data_len_test()
+{
+    constrain data_len([185,4,0], 2) == 1024;
+}
+
+#[test]
+fn rlp_length_check()
+{
+    // List test case
+    let in0: [u8; MAX_LEN_IN_BYTES + 1] = u8_take_with_offset([ 0xc7, 0xc0, 0xc1, 0xc0, 0xc3, 0xc0, 0xc1, 0xc0 ], 0);
+    let x = decode_len(in0);
+    constrain x.offset == 1;
+    constrain x.length == 7;
+    constrain x.data_type == IS_LIST;
+
+    // String test case
+    let y = decode_len([ 0x82, 0x04, 0x00 ]);
+    constrain y.offset == 1;
+    constrain y.length == 2;
+    constrain y.data_type == IS_STRING;
+
+    // // Longer string test case
+    let z = decode_len([185,4,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63,64,65,66,67,68,69,70,71,72,73,74,75,76,77,78,79,80,81,82,83,84,85,86,87,88,89,90,91,92,93,94,95,96,97,98,99,100,101,102,103,104,105,106,107,108,109,110,111,112,113,114,115,116,117,118,119,120,121,122,123,124,125,126,127,128,129,130,131,132,133,134,135,136,137,138,139,140,141,142,143,144,145,146,147,148,149,150,151,152,153,154,155,156,157,158,159,160,161,162,163,164,165,166,167,168,169,170,171,172,173,174,175,176,177,178,179,180,181,182,183,184,185,186,187,188,189,190,191,192,193,194,195,196,197,198,199,200,201,202,203,204,205,206,207,208,209,210,211,212,213,214,215,216,217,218,219,220,221,222,223,224,225,226,227,228,229,230,231,232,233,234,235,236,237,238,239,240,241,242,243,244,245,246,247,248,249,250,251,252,253,254,255,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63,64,65,66,67,68,69,70,71,72,73,74,75,76,77,78,79,80,81,82,83,84,85,86,87,88,89,90,91,92,93,94,95,96,97,98,99,100,101,102,103,104,105,106,107,108,109,110,111,112,113,114,115,116,117,118,119,120,121,122,123,124,125,126,127,128,129,130,131,132,133,134,135,136,137,138,139,140,141,142,143,144,145,146,147,148,149,150,151,152,153,154,155,156,157,158,159,160,161,162,163,164,165,166,167,168,169,170,171,172,173,174,175,176,177,178,179,180,181,182,183,184,185,186,187,188,189,190,191,192,193,194,195,196,197,198,199,200,201,202,203,204,205,206,207,208,209,210,211,212,213,214,215,216,217,218,219,220,221,222,223,224,225,226,227,228,229,230,231,232,233,234,235,236,237,238,239,240,241,242,243,244,245,246,247,248,249,250,251,252,253,254,255,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63,64,65,66,67,68,69,70,71,72,73,74,75,76,77,78,79,80,81,82,83,84,85,86,87,88,89,90,91,92,93,94,95,96,97,98,99,100,101,102,103,104,105,106,107,108,109,110,111,112,113,114,115,116,117,118,119,120,121,122,123,124,125,126,127,128,129,130,131,132,133,134,135,136,137,138,139,140,141,142,143,144,145,146,147,148,149,150,151,152,153,154,155,156,157,158,159,160,161,162,163,164,165,166,167,168,169,170,171,172,173,174,175,176,177,178,179,180,181,182,183,184,185,186,187,188,189,190,191,192,193,194,195,196,197,198,199,200,201,202,203,204,205,206,207,208,209,210,211,212,213,214,215,216,217,218,219,220,221,222,223,224,225,226,227,228,229,230,231,232,233,234,235,236,237,238,239,240,241,242,243,244,245,246,247,248,249,250,251,252,253,254,255,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63,64,65,66,67,68,69,70,71,72,73,74,75,76,77,78,79,80,81,82,83,84,85,86,87,88,89,90,91,92,93,94,95,96,97,98,99,100,101,102,103,104,105,106,107,108,109,110,111,112,113,114,115,116,117,118,119,120,121,122,123,124,125,126,127,128,129,130,131,132,133,134,135,136,137,138,139,140,141,142,143,144,145,146,147,148,149,150,151,152,153,154,155,156,157,158,159,160,161,162,163,164,165,166,167,168,169,170,171,172,173,174,175,176,177,178,179,180,181,182,183,184,185,186,187,188,189,190,191,192,193,194,195,196,197,198,199,200,201,202,203,204,205,206,207,208,209,210,211,212,213,214,215,216,217,218,219,220,221,222,223,224,225,226,227,228,229,230,231,232,233,234,235,236,237,238,239,240,241,242,243,244,245,246,247,248,249,250,251,252,253,254,255,0]);
+    constrain z.offset == 3;
+    constrain z.length == 1024;
+    constrain z.data_type == IS_STRING;
+}
+
+fn u8_take_with_offset<N, M>(arr: [u8; N], offset: comptime Field) -> [u8; M]
+{
+    let mut out = [0; M];
+
+    for i in 0..M
+    {
+	let j = (((i + offset) as u64) < N) as Field * (i + offset); // Restrict to proper range and fill with arr[0] otherwise.
+	out[i] = arr[j];
+    }
 
     out
 }
@@ -70,142 +236,3 @@ fn comptime_strict_if(pred: comptime bool, x: comptime Field, y: comptime Field)
     pred_f*x + (1-pred_f)*y
 }
 
-// RLP list decoder
-// Decodes one level at a time by returning the number of (outer) fields,
-// the offsets of the fields, their lengths and their types (IS_STRING or IS_LIST).
-fn decode1<N, NUM_FIELDS>(input: [u8; N])
-			  -> (Field, // Number of fields
-			     [Field; NUM_FIELDS], // Offsets
-			     [Field; NUM_FIELDS], // Lengths
-			     [Field; NUM_FIELDS]) // Types
-{
-    let mut num_fields: Field = 0; // Number of fields
-    let mut dec_off = [0; NUM_FIELDS]; // Decoded offsets
-    let mut dec_len = [0; NUM_FIELDS]; // Decoded lengths
-    let mut dec_typ = [0; NUM_FIELDS]; // Decoded types
-
-    let (offset, payload_len, input_typ) = decode_len(input);
-    let total_len = payload_len + offset;
-
-    constrain input_typ == IS_LIST; // Should be dealing with a list
-    constrain (total_len as u64) <= (input.len() as u64); // Payload should be fully contained in input array
-
-    let mut cur_field_ptr = 0; // Field byte cursor
-    let mut cur_field_total_len = 0;
-
-    for i in 0..input.len()
-    {
-	let range_p = ((offset as u64) <= (i as u64)) & ((i as u64) < (total_len as u64)); // Index range predicate
-	let header_read_p = range_p & (cur_field_total_len == 0);
-
-	// If header needs to be read, we need to decode its length
-	let header: [u8; MAX_LEN_IN_BYTES + 1] = u8_take_with_offset(input, i);
-	let (field_off, field_len, field_typ) = decode_len(header);
-
-	// If within range and in 'header read' mode, take note of total
-	// length of payload (i.e. including offset).
-	cur_field_total_len = (header_read_p as Field)*(field_len + field_off) + (1 - header_read_p as Field)* cur_field_total_len;
-	
-	// Place these in output arrays if necessary.
-	for j in 0..NUM_FIELDS
-	{
-	    let index_p = (range_p & header_read_p & (j == num_fields)) as Field;
-	    dec_off[j] = index_p * (i + field_off) + (1-index_p) * dec_off[j];
-	    dec_len[j] = index_p * field_len + (1-index_p)* dec_len[j];
-	    dec_typ[j] = index_p * field_typ + (1-index_p)*dec_typ[j];
-	}
-	// Increment ptr if not in 'header read' mode
-	cur_field_ptr += (range_p as Field)*(1 - header_read_p as Field) + (1 - range_p as Field)*cur_field_ptr;
-
-	// If we are done with a field (i.e. cur_field_ptr == cur_field_total_len),
-	let field_end_p = range_p & (cur_field_ptr == cur_field_total_len - 1);
-
-	// reset field ptr and increment field number.
-	// Only do this if we are within range!
-	cur_field_ptr = (1 - field_end_p as Field) * cur_field_ptr;
-	cur_field_total_len = (1 - field_end_p as Field)*cur_field_total_len;
-	num_fields += field_end_p as Field;
-
-
-	
-	constrain (num_fields as u64) <= (NUM_FIELDS as u64);
-    }
-
-    let out = (num_fields, dec_off, dec_len, dec_typ);
-    out
-}
-
-#[test]
-fn rlp_decode_test()
-{
-    // Decode empty list
-    // let empty_list: (Field, [Field; MAX_FIELDS], [Field; MAX_FIELDS], [Field; MAX_FIELDS]) = decode1([0xc0]);
-    
-    // constrain empty_list.0 == 0;
-    
-    let input = [ 0xc9, 0x83, 0x63, 0x61, 0x74, 0x83, 0x64, 0x6f, 0x68, 0, 0 ];
-    let output: (Field, [Field; MAX_FIELDS], [Field; MAX_FIELDS], [Field; MAX_FIELDS]) = decode1(input);
-    
-    constrain output.0 == 3;
-    // Offsets
-    // constrain output.1[0] == 2;
-    // constrain output.1[1] == 6;
-    // constrain output.1[2] == 9;
-    // // Lengths
-    // constrain output.2[0] == 3;
-    // constrain output.2[1] == 3;
-    // constrain output.2[2] == 1;
-
-    let input1 = [249,2,17,160,10,210,58,71,229,91,254,185,245,139,35,127,191,50,125,165,19,165,59,86,127,77,226,197,94,143,9,69,104,149,113,39,160,164,115,165,166,228,180,44,203,222,52,48,157,214,190,69,130,116,84,133,170,215,193,212,152,106,149,100,253,145,220,246,94,160,69,11,1,238,164,195,225,91,51,198,134,50,21,34,253,120,157,26,173,81,148,24,94,179,165,5,99,85,90,78,104,180,160,82,128,145,254,48,73,106,165,234,223,46,5,168,79,141,218,64,98,200,87,199,28,213,222,164,182,145,219,253,186,121,39,160,167,139,46,219,193,195,174,240,47,40,188,121,97,50,227,220,35,99,122,36,94,78,156,78,197,54,232,163,249,213,16,58,160,111,180,73,26,200,238,6,49,66,159,230,23,226,13,10,230,7,51,103,45,139,187,57,125,86,1,146,77,200,196,223,158,160,55,41,196,37,89,112,4,6,183,246,239,121,175,146,171,71,19,99,239,56,75,116,235,20,239,208,243,25,211,222,248,120,160,203,87,65,73,168,197,46,86,209,173,204,46,232,157,204,145,75,151,105,166,72,142,173,255,186,120,43,121,104,228,130,134,160,150,115,130,186,247,99,108,21,244,243,60,208,96,34,93,32,175,77,181,18,59,49,192,153,255,123,231,108,251,75,134,92,160,78,107,27,31,43,92,213,101,63,87,83,248,163,19,104,103,84,248,119,180,32,209,82,52,250,148,101,219,76,194,160,125,160,83,37,183,243,189,9,79,122,28,120,150,139,190,225,222,184,206,225,117,233,244,162,244,212,38,220,37,129,215,25,93,53,160,229,6,255,207,78,120,107,238,212,128,106,189,84,39,136,172,149,67,89,238,163,122,88,90,149,80,59,121,249,7,238,1,160,81,214,156,64,149,165,65,36,216,223,167,73,213,180,230,230,32,106,193,147,176,40,93,119,210,13,1,159,16,112,114,103,160,211,15,4,49,74,86,24,146,109,246,80,207,194,97,226,153,241,94,43,233,192,2,152,171,150,86,26,250,234,179,74,156,160,175,157,156,73,109,26,48,12,182,175,211,173,181,241,131,247,105,98,255,101,7,227,21,63,78,41,155,58,231,222,15,141,160,219,213,163,116,191,119,232,215,182,77,130,102,90,48,66,197,228,202,43,169,232,246,11,23,100,50,211,205,202,115,60,49,128];
-
-     let output1: (Field, [Field; MAX_FIELDS], [Field; MAX_FIELDS], [Field; MAX_FIELDS]) = decode1(input1);
-
-    constrain output1.0 == 17;
-    constrain output1.1 == [4, 37, 70, 103, 136, 169, 202, 235, 268, 301, 334, 367, 400, 433, 466, 499, 532];
-    constrain output1.2 == [32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 0];
-    constrain output1.3 == [0; MAX_FIELDS];
-    // 5???
-}
-
-
-#[test]
-fn data_len_test()
-{
-    constrain data_len([185,4,0], 2) == 1024;
-}
-
-#[test]
-fn rlp_length_check()
-{
-    // List test case
-    let in0: [u8; MAX_LEN_IN_BYTES + 1] = u8_take_with_offset([ 0xc7, 0xc0, 0xc1, 0xc0, 0xc3, 0xc0, 0xc1, 0xc0 ], 0);
-    let x = decode_len(in0);
-    constrain x.0 == 1;
-    constrain x.1 == 7;
-    constrain x.2 == IS_LIST;
-
-    // String test case
-    let y = decode_len([ 0x82, 0x04, 0x00 ]);
-    constrain y.0 == 1;
-    constrain y.1 == 2;
-    constrain y.2 == IS_STRING;
-
-    // // Longer string test case
-    let z = decode_len([185,4,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63,64,65,66,67,68,69,70,71,72,73,74,75,76,77,78,79,80,81,82,83,84,85,86,87,88,89,90,91,92,93,94,95,96,97,98,99,100,101,102,103,104,105,106,107,108,109,110,111,112,113,114,115,116,117,118,119,120,121,122,123,124,125,126,127,128,129,130,131,132,133,134,135,136,137,138,139,140,141,142,143,144,145,146,147,148,149,150,151,152,153,154,155,156,157,158,159,160,161,162,163,164,165,166,167,168,169,170,171,172,173,174,175,176,177,178,179,180,181,182,183,184,185,186,187,188,189,190,191,192,193,194,195,196,197,198,199,200,201,202,203,204,205,206,207,208,209,210,211,212,213,214,215,216,217,218,219,220,221,222,223,224,225,226,227,228,229,230,231,232,233,234,235,236,237,238,239,240,241,242,243,244,245,246,247,248,249,250,251,252,253,254,255,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63,64,65,66,67,68,69,70,71,72,73,74,75,76,77,78,79,80,81,82,83,84,85,86,87,88,89,90,91,92,93,94,95,96,97,98,99,100,101,102,103,104,105,106,107,108,109,110,111,112,113,114,115,116,117,118,119,120,121,122,123,124,125,126,127,128,129,130,131,132,133,134,135,136,137,138,139,140,141,142,143,144,145,146,147,148,149,150,151,152,153,154,155,156,157,158,159,160,161,162,163,164,165,166,167,168,169,170,171,172,173,174,175,176,177,178,179,180,181,182,183,184,185,186,187,188,189,190,191,192,193,194,195,196,197,198,199,200,201,202,203,204,205,206,207,208,209,210,211,212,213,214,215,216,217,218,219,220,221,222,223,224,225,226,227,228,229,230,231,232,233,234,235,236,237,238,239,240,241,242,243,244,245,246,247,248,249,250,251,252,253,254,255,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63,64,65,66,67,68,69,70,71,72,73,74,75,76,77,78,79,80,81,82,83,84,85,86,87,88,89,90,91,92,93,94,95,96,97,98,99,100,101,102,103,104,105,106,107,108,109,110,111,112,113,114,115,116,117,118,119,120,121,122,123,124,125,126,127,128,129,130,131,132,133,134,135,136,137,138,139,140,141,142,143,144,145,146,147,148,149,150,151,152,153,154,155,156,157,158,159,160,161,162,163,164,165,166,167,168,169,170,171,172,173,174,175,176,177,178,179,180,181,182,183,184,185,186,187,188,189,190,191,192,193,194,195,196,197,198,199,200,201,202,203,204,205,206,207,208,209,210,211,212,213,214,215,216,217,218,219,220,221,222,223,224,225,226,227,228,229,230,231,232,233,234,235,236,237,238,239,240,241,242,243,244,245,246,247,248,249,250,251,252,253,254,255,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63,64,65,66,67,68,69,70,71,72,73,74,75,76,77,78,79,80,81,82,83,84,85,86,87,88,89,90,91,92,93,94,95,96,97,98,99,100,101,102,103,104,105,106,107,108,109,110,111,112,113,114,115,116,117,118,119,120,121,122,123,124,125,126,127,128,129,130,131,132,133,134,135,136,137,138,139,140,141,142,143,144,145,146,147,148,149,150,151,152,153,154,155,156,157,158,159,160,161,162,163,164,165,166,167,168,169,170,171,172,173,174,175,176,177,178,179,180,181,182,183,184,185,186,187,188,189,190,191,192,193,194,195,196,197,198,199,200,201,202,203,204,205,206,207,208,209,210,211,212,213,214,215,216,217,218,219,220,221,222,223,224,225,226,227,228,229,230,231,232,233,234,235,236,237,238,239,240,241,242,243,244,245,246,247,248,249,250,251,252,253,254,255,0]);
-    constrain z.0 == 3;
-    constrain z.1 == 1024;
-    constrain z.2 == IS_STRING;
-}
-
-fn u8_take_with_offset<N, M>(arr: [u8; N], offset: comptime Field) -> [u8; M]
-{
-    let mut out = [0; M];
-
-    for i in 0..M
-    {
-	let j = (((i + offset) as u64) < N) as Field * (i + offset); // Restrict to proper range and fill with arr[0] otherwise.
-	out[i] = arr[j];
-    }
-
-    out
-}

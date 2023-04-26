@@ -187,8 +187,8 @@ fn get<N>(
     Field) // New key offset if follow was successful
 {
     let mut success_pred = true;
-    let rlp_list: (Field, [Field; MAX_NUM_FIELDS], [Field; MAX_NUM_FIELDS], [Field; MAX_NUM_FIELDS]) = rlp::decode1(node);
-    let num_fields = rlp_list.0;
+    let rlp_list: rlp::RLP_List<MAX_NUM_FIELDS> = rlp::decode1(node);
+    let num_fields = rlp_list.num_fields;
     constrain (num_fields == 2) | (num_fields == 17);
 
     let mut value = [0; KEY_LENGTH];
@@ -196,7 +196,7 @@ fn get<N>(
 
     if num_fields == 2
     {
-	let (nib, niblen) = compact_decode(node, rlp_list.1[0], rlp_list.2[0]);
+	let (nib, niblen) = compact_decode(node, rlp_list.offset[0], rlp_list.length[0]);
 	constrain NIBBLE_LENGTH as u64 - key_offset as u64 >= niblen as u64;
 
 	let mut nib_ptr = 0;
@@ -209,7 +209,7 @@ fn get<N>(
 	    }
 	}
 	
-	value_length = rlp_list.2[1];
+	value_length = rlp_list.length[1];
 
         key_offset += niblen;
 
@@ -218,7 +218,7 @@ fn get<N>(
 	
 	for j in 3..(KEY_LENGTH + 5)
 	{
-	    if j == rlp_list.1[1]
+	    if j == rlp_list.offset[1]
 	    {
 		for i in 0..KEY_LENGTH
 		{
@@ -231,11 +231,11 @@ fn get<N>(
     else
     {
 	let cur_nibble = u4_ref(key, key_offset);
-	value_length = ref(rlp_list.2, cur_nibble as Field);
+	value_length = ref(rlp_list.length, cur_nibble as Field);
 
 	key_offset += 1;
 
-	let nibble_offset = ref(rlp_list.1, cur_nibble as Field);
+	let nibble_offset = ref(rlp_list.offset, cur_nibble as Field);
 
 	for i in 0..(node.len() - 33) // TODO
 	{
@@ -319,10 +319,10 @@ fn cryptopunk1() // Who owns the first cryptopunk? cf. https://www.youtube.com/w
 fn lookup_test()
 {
     let x3 = [246,159,32,176,50,213,165,250,58,91,101,68,86,110,228,106,15,107,143,232,177,55,94,200,120,220,59,230,88,11,7,132,149,149,148,184,143,97,230,251,218,131,251,255,250,190,54,65,18,19,116,128,57,128,24,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
-    let rlp_list3: (Field, [Field; MAX_NUM_FIELDS], [Field; MAX_NUM_FIELDS], [Field; MAX_NUM_FIELDS]) = rlp::decode1(x3);
-    constrain rlp_list3.0 == 2;
-    constrain rlp_list3.2[0] == 31;
-    constrain rlp_list3.2[1] == 21;
+    let rlp_list3: rlp::RLP_List<MAX_NUM_FIELDS> = rlp::decode1(x3);
+    constrain rlp_list3.num_fields == 2;
+    constrain rlp_list3.length[0] == 31;
+    constrain rlp_list3.length[1] == 21;
     let (_success_pred, value3, value_length3, _key_offset3) = get(
 	key_as_nibbles([0xed,0x65,0xb0,0x32,0xd5,0xa5,0xfa,0x3a,0x5b,0x65,0x44,0x56,0x6e,0xe4,0x6a,0x0f,0x6b,0x8f,0xe8,0xb1,0x37,0x5e,0xc8,0x78,0xdc,0x3b,0xe6,0x58,0x0b,0x07,0x84,0x95]),
 	4,
