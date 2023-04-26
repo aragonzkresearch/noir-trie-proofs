@@ -10,6 +10,8 @@ global MAX_NODE_LENGTH: comptime Field = 532; // = MAX_RLP_LIST_HEADER_LENGTH (=
 //   + 16*MAX_RLP_ELEMENT_LENGTH (= 16*(1 + KEY_LENGTH))
 // + LENGTH_OF_NULL_ELEMENT (= 1)
 
+global MAX_NUM_FIELDS: Field = 17;
+
 // Ethereum trie proof verifier
 fn verify_proof<N>( // N *must* be a multiple of MAX_NODE_LENGTH!
     root_hash: [u8; KEY_LENGTH], // Hash of root, i.e. first, node.
@@ -19,7 +21,7 @@ fn verify_proof<N>( // N *must* be a multiple of MAX_NODE_LENGTH!
     value: [u8; KEY_LENGTH], // Value to verify
     mut value_length: Field) -> bool // Length of value to verify
 {
-    constrain (N as u64) % (MAX_NODE_LENGTH as u64) == 0;
+    constrain (N as u64) % (MAX_NODE_LENGTH as u64) == 0; // Check that N is a multiple of MAX_NODE_LENGTH
     
     let _r = root_hash; // TODO: Delete once keccak256 is ready
     // let mut prev_hash = root_hash; // TODO: Uncomment when keccak256 is ready
@@ -33,7 +35,7 @@ fn verify_proof<N>( // N *must* be a multiple of MAX_NODE_LENGTH!
     let mut cur_value_length = 0;
     
     let mut cur_node = [0; MAX_NODE_LENGTH];
-    
+
     for i in 0..path.len()/MAX_NODE_LENGTH
     {
 	if i as u8 < depth as u8
@@ -47,15 +49,15 @@ fn verify_proof<N>( // N *must* be a multiple of MAX_NODE_LENGTH!
 	    // let node_length = { let rlp_header = rlp::decode_length(cur_node); rlp_header.offset + rlp_header.length }; // Determine length of node
 	    // let cur_hash = ... ; // TODO: Compute keccak256 hash
 	    // constrain cur_hash == prev_hash; // Make sure hashes are consistent
-	    
  	    let lookup = get(key_nibbles, key_offset, cur_node); // Follow node
- 	    cur_value = lookup.0;
-	    cur_value_length = lookup.1;
- 	    key_offset = lookup.2;
+ 	    cur_value = lookup.1;
+	    cur_value_length = lookup.2;
+ 	    key_offset = lookup.3;
 
 	    // let prev_hash = cur_hash;
 	}
     }
+
 
     constrain key_offset == 2*key.len(); // All of the key has been exhausted.
 
@@ -139,7 +141,7 @@ fn compact_decode<N>(input: [u8; N], offset: Field, length: Field) -> ([u4; NIBB
 	{
 	    let first_nibble = (input[j] >> 4) as u4;
 	    let parity = first_nibble as u1;
-	    
+
 	    if parity == 1
 	    {
 		nibble[0] = (input[j] & 0x0f) as u4;
@@ -179,20 +181,22 @@ fn get<N>(
     key: [u4; NIBBLE_LENGTH],
     mut key_offset: Field,
     node: [u8; N]) -> (
+    bool, // Predicate indicating success or failure
     [u8; KEY_LENGTH], // Value obtained from node
     Field, // Length of value obtained from node (between 0 and KEY_LENGTH)
     Field) // New key offset if follow was successful
 {
-    let rlp_list = rlp::decode1(node);
-    let num_elements = rlp_list.num_elements;
-    constrain (num_elements == 2) | (num_elements == 17);
+    let mut success_pred = true;
+    let rlp_list: (Field, [Field; MAX_NUM_FIELDS], [Field; MAX_NUM_FIELDS], [Field; MAX_NUM_FIELDS]) = rlp::decode1(node);
+    let num_fields = rlp_list.0;
+    constrain (num_fields == 2) | (num_fields == 17);
 
     let mut value = [0; KEY_LENGTH];
     let mut value_length = 0;
 
-    if num_elements == 2
+    if num_fields == 2
     {
-	let (nib, niblen) = compact_decode(node, rlp_list.offset[0], rlp_list.length[0]);
+	let (nib, niblen) = compact_decode(node, rlp_list.1[0], rlp_list.2[0]);
 	constrain NIBBLE_LENGTH as u64 - key_offset as u64 >= niblen as u64;
 
 	let mut nib_ptr = 0;
@@ -200,12 +204,12 @@ fn get<N>(
 	{
 	    if i as u64 >= key_offset as u64
 	    {
-		constrain u4_ref(nib,nib_ptr) == key[i];
+		success_pred &= u4_ref(nib,nib_ptr) == key[i];
 		nib_ptr += 1;
 	    }
 	}
 	
-	value_length = rlp_list.length[1];
+	value_length = rlp_list.2[1];
 
         key_offset += niblen;
 
@@ -214,7 +218,7 @@ fn get<N>(
 	
 	for j in 3..(KEY_LENGTH + 5)
 	{
-	    if j == rlp_list.offset[1]
+	    if j == rlp_list.1[1]
 	    {
 		for i in 0..KEY_LENGTH
 		{
@@ -227,11 +231,11 @@ fn get<N>(
     else
     {
 	let cur_nibble = u4_ref(key, key_offset);
-	value_length = ref(rlp_list.length, cur_nibble as Field);
+	value_length = ref(rlp_list.2, cur_nibble as Field);
 
 	key_offset += 1;
 
-	let nibble_offset = ref(rlp_list.offset, cur_nibble as Field);
+	let nibble_offset = ref(rlp_list.1, cur_nibble as Field);
 
 	for i in 0..(node.len() - 33) // TODO
 	{
@@ -245,7 +249,7 @@ fn get<N>(
 	}
     }
 
-    let out = (value, value_length, key_offset);
+    let out = (success_pred, value, value_length, key_offset);
 
     out
 }
@@ -307,6 +311,7 @@ fn cryptopunk1() // Who owns the first cryptopunk? cf. https://www.youtube.com/w
 
     let key = [0xed,0x65,0xb0,0x32,0xd5,0xa5,0xfa,0x3a,0x5b,0x65,0x44,0x56,0x6e,0xe4,0x6a,0x0f,0x6b,0x8f,0xe8,0xb1,0x37,0x5e,0xc8,0x78,0xdc,0x3b,0xe6,0x58,0x0b,0x07,0x84,0x95]; // keccak256([0xbb,0xc7,0x0d,0xb1,0xb6,0xc7,0xaf,0xd1,0x1e,0x79,0xc0,0xfb,0x00,0x51,0x30,0x04,0x58,0xf1,0xa3,0xac,0xb8,0xee,0x97,0x89,0xd9,0xb6,0xb2,0x6c,0x61,0xad,0x9b,0xc7]
     constrain verify_proof([0; KEY_LENGTH], path, depth, key, [0x94,0xb8,0x8f,0x61,0xe6,0xfb,0xda,0x83,0xfb,0xff,0xfa,0xbe,0x36,0x41,0x12,0x13,0x74,0x80,0x39,0x80,0x18,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00], 21);
+
 }
 
 // Auxiliary function tests
@@ -314,11 +319,11 @@ fn cryptopunk1() // Who owns the first cryptopunk? cf. https://www.youtube.com/w
 fn lookup_test()
 {
     let x3 = [246,159,32,176,50,213,165,250,58,91,101,68,86,110,228,106,15,107,143,232,177,55,94,200,120,220,59,230,88,11,7,132,149,149,148,184,143,97,230,251,218,131,251,255,250,190,54,65,18,19,116,128,57,128,24,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
-    let rlp_list3 = rlp::decode1(x3);
-    constrain rlp_list3.num_elements == 2;
-    constrain rlp_list3.length[0] == 31;
-    constrain rlp_list3.length[1] == 21;
-    let (value3, value_length3, _key_offset3) = get(
+    let rlp_list3: (Field, [Field; MAX_NUM_FIELDS], [Field; MAX_NUM_FIELDS], [Field; MAX_NUM_FIELDS]) = rlp::decode1(x3);
+    constrain rlp_list3.0 == 2;
+    constrain rlp_list3.2[0] == 31;
+    constrain rlp_list3.2[1] == 21;
+    let (_success_pred, value3, value_length3, _key_offset3) = get(
 	key_as_nibbles([0xed,0x65,0xb0,0x32,0xd5,0xa5,0xfa,0x3a,0x5b,0x65,0x44,0x56,0x6e,0xe4,0x6a,0x0f,0x6b,0x8f,0xe8,0xb1,0x37,0x5e,0xc8,0x78,0xdc,0x3b,0xe6,0x58,0x0b,0x07,0x84,0x95]),
 	4,
 	x3);
@@ -353,14 +358,14 @@ fn compact_decode_test()
 
 // Omit the following test due to compiler panic
 
-// #[test]
-// fn encode_value_test()
-// {
-//     let val1 = [0xb8,0x8f,0x61,0xe6,0xfb,0xda,0x83,0xfb,0xff,0xfa,0xbe,0x36,0x41,0x12,0x13,0x74,0x80,0x39,0x80,0x18,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00];
-//     let val1_length = 20;
+#[test]
+fn encode_value_test()
+{
+    let val1 = [0xb8,0x8f,0x61,0xe6,0xfb,0xda,0x83,0xfb,0xff,0xfa,0xbe,0x36,0x41,0x12,0x13,0x74,0x80,0x39,0x80,0x18,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00];
+    let val1_length = 20;
 
-//     let encoded_val1 = encode_value(val1,val1_length);
+    let encoded_val1 = encode_value(val1,val1_length);
 
-//     constrain encoded_val1.0 == [0x94,0xb8,0x8f,0x61,0xe6,0xfb,0xda,0x83,0xfb,0xff,0xfa,0xbe,0x36,0x41,0x12,0x13,0x74,0x80,0x39,0x80,0x18,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00];
-//     constrain encoded_val1.1 == 21;
-// }
+    constrain encoded_val1.0 == [0x94,0xb8,0x8f,0x61,0xe6,0xfb,0xda,0x83,0xfb,0xff,0xfa,0xbe,0x36,0x41,0x12,0x13,0x74,0x80,0x39,0x80,0x18,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00];
+    constrain encoded_val1.1 == 21;
+}
