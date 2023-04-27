@@ -21,7 +21,7 @@ fn verify_proof<N>( // N *must* be a multiple of MAX_NODE_LENGTH!
     value: [u8; KEY_LENGTH], // Value to verify
     mut value_length: Field) -> bool // Length of value to verify
 {
-    constrain (N as u64) % (MAX_NODE_LENGTH as u64) == 0; // Check that N is a multiple of MAX_NODE_LENGTH
+    assert((N as u64) % (MAX_NODE_LENGTH as u64) == 0); // Check that N is a multiple of MAX_NODE_LENGTH
     
     let _r = root_hash; // TODO: Delete once keccak256 is ready
     // let mut prev_hash = root_hash; // TODO: Uncomment when keccak256 is ready
@@ -48,7 +48,7 @@ fn verify_proof<N>( // N *must* be a multiple of MAX_NODE_LENGTH!
 	    // First compute current node hash
 	    // let node_length = { let rlp_header = rlp::decode_length(cur_node); rlp_header.offset + rlp_header.length }; // Determine length of node
 	    // let cur_hash = ... ; // TODO: Compute keccak256 hash
-	    // constrain cur_hash == prev_hash; // Make sure hashes are consistent
+	    // assert(cur_hash == prev_hash); // Make sure hashes are consistent
  	    let lookup = get(key_nibbles, key_offset, cur_node); // Follow node
  	    cur_value = lookup.1;
 	    cur_value_length = lookup.2;
@@ -57,17 +57,21 @@ fn verify_proof<N>( // N *must* be a multiple of MAX_NODE_LENGTH!
 	    // let prev_hash = cur_hash;
 	}
     }
+    
 
+    assert(key_offset == 2*key.len()); // All of the key has been exhausted.
 
-    constrain key_offset == 2*key.len(); // All of the key has been exhausted.
+    // Need to encode value
 
-    constrain cur_value_length == value_length; // Value length equality
+    let (enc_value, enc_value_length) = encode_value(value, value_length);
+
+    assert(cur_value_length == enc_value_length); // Value length equality
 
     for i in 0..KEY_LENGTH
     {
 	if i as u8 < value_length as u8
 	{
-	    constrain cur_value[i] == value[i]; // Value equality
+	    assert(cur_value[i] == enc_value[i]); // Value equality
 	}
     }
     
@@ -77,7 +81,7 @@ fn verify_proof<N>( // N *must* be a multiple of MAX_NODE_LENGTH!
 // Encode value according to 'node cap function' (see Appendix D of Ethereum Yellow Paper)
 fn encode_value<N>(value: [u8; N], value_length: Field) -> ([u8; KEY_LENGTH], Field)
 {
-    constrain value.len() as u64 >= value_length as u64;
+    assert(value.len() as u64 >= value_length as u64);
 
     let mut out_value = [0; KEY_LENGTH];
     
@@ -189,7 +193,7 @@ fn get<N>(
     let mut success_pred = true;
     let rlp_list: rlp::RLP_List<MAX_NUM_FIELDS> = rlp::decode1(node);
     let num_fields = rlp_list.num_fields;
-    constrain (num_fields == 2) | (num_fields == 17);
+    assert((num_fields == 2) | (num_fields == 17));
 
     let mut value = [0; KEY_LENGTH];
     let mut value_length = 0;
@@ -197,7 +201,7 @@ fn get<N>(
     if num_fields == 2
     {
 	let (nib, niblen) = compact_decode(node, rlp_list.offset[0], rlp_list.length[0]);
-	constrain NIBBLE_LENGTH as u64 - key_offset as u64 >= niblen as u64;
+	assert(NIBBLE_LENGTH as u64 - key_offset as u64 >= niblen as u64);
 
 	let mut nib_ptr = 0;
 	for i in 0..key.len() // Should have key.len() == KEY_LENGTH
@@ -310,7 +314,9 @@ fn cryptopunk1() // Who owns the first cryptopunk? cf. https://www.youtube.com/w
     let depth = 5; // Actual depth
 
     let key = [0xed,0x65,0xb0,0x32,0xd5,0xa5,0xfa,0x3a,0x5b,0x65,0x44,0x56,0x6e,0xe4,0x6a,0x0f,0x6b,0x8f,0xe8,0xb1,0x37,0x5e,0xc8,0x78,0xdc,0x3b,0xe6,0x58,0x0b,0x07,0x84,0x95]; // keccak256([0xbb,0xc7,0x0d,0xb1,0xb6,0xc7,0xaf,0xd1,0x1e,0x79,0xc0,0xfb,0x00,0x51,0x30,0x04,0x58,0xf1,0xa3,0xac,0xb8,0xee,0x97,0x89,0xd9,0xb6,0xb2,0x6c,0x61,0xad,0x9b,0xc7]
-    constrain verify_proof([0; KEY_LENGTH], path, depth, key, [0x94,0xb8,0x8f,0x61,0xe6,0xfb,0xda,0x83,0xfb,0xff,0xfa,0xbe,0x36,0x41,0x12,0x13,0x74,0x80,0x39,0x80,0x18,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00], 21);
+    let value = [0xb8,0x8f,0x61,0xe6,0xfb,0xda,0x83,0xfb,0xff,0xfa,0xbe,0x36,0x41,0x12,0x13,0x74,0x80,0x39,0x80,0x18,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00];
+    let value_length = 20;
+    assert(verify_proof([0; KEY_LENGTH], path, depth, key, value, value_length));
 
 }
 
@@ -320,39 +326,39 @@ fn lookup_test()
 {
     let x3 = [246,159,32,176,50,213,165,250,58,91,101,68,86,110,228,106,15,107,143,232,177,55,94,200,120,220,59,230,88,11,7,132,149,149,148,184,143,97,230,251,218,131,251,255,250,190,54,65,18,19,116,128,57,128,24,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
     let rlp_list3: rlp::RLP_List<MAX_NUM_FIELDS> = rlp::decode1(x3);
-    constrain rlp_list3.num_fields == 2;
-    constrain rlp_list3.length[0] == 31;
-    constrain rlp_list3.length[1] == 21;
+    assert(rlp_list3.num_fields == 2);
+    assert(rlp_list3.length[0] == 31);
+    assert(rlp_list3.length[1] == 21);
     let (_success_pred, value3, value_length3, _key_offset3) = get(
 	key_as_nibbles([0xed,0x65,0xb0,0x32,0xd5,0xa5,0xfa,0x3a,0x5b,0x65,0x44,0x56,0x6e,0xe4,0x6a,0x0f,0x6b,0x8f,0xe8,0xb1,0x37,0x5e,0xc8,0x78,0xdc,0x3b,0xe6,0x58,0x0b,0x07,0x84,0x95]),
 	4,
 	x3);
-    constrain value_length3 == 21;
-    constrain value3[0] == 0x94;
-    constrain value3[20] == 0x18;
+    assert(value_length3 == 21);
+    assert(value3[0] == 0x94);
+    assert(value3[20] == 0x18);
     
 }
 
 #[test]
 fn nibble_check()
 {
-    constrain key_as_nibbles([0x56,0xe8,0x1f,0x17,0x1b,0xcc,0x55,0xa6,0xff,0x83,0x45,0xe6,0x92,0xc0,0xf8,0x6e,0x5b,0x48,0xe0,0x1b,0x99,0x6c,0xad,0xc0,0x01,0x62,0x2f,0xb5,0xe3,0x63,0xb4,0x21]) == [0x05,0x06,0x0e,0x08,0x01,0x0f,0x01,0x07,0x01,0x0b,0x0c,0x0c,0x05,0x05,0x0a,0x06,0x0f,0x0f,0x08,0x03,0x04,0x05,0x0e,0x06,0x09,0x02,0x0c,0x00,0x0f,0x08,0x06,0x0e,0x05,0x0b,0x04,0x08,0x0e,0x00,0x01,0x0b,0x09,0x09,0x06,0x0c,0x0a,0x0d,0x0c,0x00,0x00,0x01,0x06,0x02,0x02,0x0f,0x0b,0x05,0x0e,0x03,0x06,0x03,0x0b,0x04,0x02,0x01];
+    assert(key_as_nibbles([0x56,0xe8,0x1f,0x17,0x1b,0xcc,0x55,0xa6,0xff,0x83,0x45,0xe6,0x92,0xc0,0xf8,0x6e,0x5b,0x48,0xe0,0x1b,0x99,0x6c,0xad,0xc0,0x01,0x62,0x2f,0xb5,0xe3,0x63,0xb4,0x21]) == [0x05,0x06,0x0e,0x08,0x01,0x0f,0x01,0x07,0x01,0x0b,0x0c,0x0c,0x05,0x05,0x0a,0x06,0x0f,0x0f,0x08,0x03,0x04,0x05,0x0e,0x06,0x09,0x02,0x0c,0x00,0x0f,0x08,0x06,0x0e,0x05,0x0b,0x04,0x08,0x0e,0x00,0x01,0x0b,0x09,0x09,0x06,0x0c,0x0a,0x0d,0x0c,0x00,0x00,0x01,0x06,0x02,0x02,0x0f,0x0b,0x05,0x0e,0x03,0x06,0x03,0x0b,0x04,0x02,0x01]);
 }
 
 #[test]
 fn compact_decode_test()
 {
     let (nibble0, len0) = compact_decode([0x00,0x00,0x11, 0x23, 0x45], 2, 3); // TODO: Legit header!
-    constrain len0 == 5;
-    constrain [nibble0[0], nibble0[1], nibble0[2], nibble0[3], nibble0[4]] == [1,2,3,4,5];
+    assert(len0 == 5);
+    assert([nibble0[0], nibble0[1], nibble0[2], nibble0[3], nibble0[4]] == [1,2,3,4,5]);
 
     let (nibble1, len1) = compact_decode([0x00,0x00,0x20, 0x0f, 0x1c, 0xb8], 2, 4); // TODO
-    constrain len1 == 6;
-    constrain [nibble1[0], nibble1[1], nibble1[2], nibble1[3], nibble1[4], nibble1[5]] == [0,15,1,12,11,8];
+    assert(len1 == 6);
+    assert([nibble1[0], nibble1[1], nibble1[2], nibble1[3], nibble1[4], nibble1[5]] == [0,15,1,12,11,8]);
 
     let (nibble2, len2) = compact_decode([0x10, 0x20, 0x30, 0x3f, 0x1c, 0xb8, 0x99, 0xab], 3, 3);
-    constrain len2 == 5;
-    constrain [nibble2[0], nibble2[1], nibble2[2], nibble2[3], nibble2[4]] == [15,1,12,11,8];
+    assert(len2 == 5);
+    assert([nibble2[0], nibble2[1], nibble2[2], nibble2[3], nibble2[4]] == [15,1,12,11,8]);
     
 }
 
@@ -366,6 +372,6 @@ fn encode_value_test()
 
     let encoded_val1 = encode_value(val1,val1_length);
 
-    constrain encoded_val1.0 == [0x94,0xb8,0x8f,0x61,0xe6,0xfb,0xda,0x83,0xfb,0xff,0xfa,0xbe,0x36,0x41,0x12,0x13,0x74,0x80,0x39,0x80,0x18,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00];
-    constrain encoded_val1.1 == 21;
+    assert(encoded_val1.0 == [0x94,0xb8,0x8f,0x61,0xe6,0xfb,0xda,0x83,0xfb,0xff,0xfa,0xbe,0x36,0x41,0x12,0x13,0x74,0x80,0x39,0x80,0x18,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00]);
+    assert(encoded_val1.1 == 21);
 }
