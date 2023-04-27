@@ -21,7 +21,7 @@ impl RLP_Header
     // RLP header constructor
     fn new(offset: Field, length: Field, data_type: Field) -> Self
     {
-	RLP_Header {offset, length, data_type}
+	    RLP_Header {offset, length, data_type}
     }
 }
 
@@ -41,7 +41,7 @@ impl<NUM_FIELDS> RLP_List<NUM_FIELDS>
     // RLP list constructor
     fn new(offset: [Field; NUM_FIELDS], length: [Field; NUM_FIELDS], typ: [Field; NUM_FIELDS], num_fields: Field) -> Self
     {
-	RLP_List {offset, length, typ, num_fields}
+	    RLP_List {offset, length, typ, num_fields}
     }
 }
 
@@ -51,9 +51,9 @@ fn data_len<N>(arr: [u8; N], lenlen: Field) -> Field
 
     for i in 0..MAX_LEN_IN_BYTES
     {
-	let arr_len_pred = (((i + 1) as u8) < (arr.len() as u8)) as Field;
-	let len_len_pred = (((i as u8) < (lenlen as u8)) as Field);
-	out = len_len_pred*(256*out + (arr[arr_len_pred*(i + 1)] as Field)) + (1-len_len_pred)*out;
+	    let arr_len_pred = (((i + 1) as u8) < (arr.len() as u8)) as Field;
+	    let len_len_pred = (((i as u8) < (lenlen as u8)) as Field);
+	    out = len_len_pred*(256*out + (arr[arr_len_pred*(i + 1)] as Field)) + (1-len_len_pred)*out;
     }
 
     out
@@ -70,24 +70,24 @@ fn decode_len<N>(arr: [u8; N]) -> RLP_Header
     let prefix_p4 = (prefix < 0xf8);
     
     let offset = strict_if(prefix_p1,
-			   0,
-			   strict_if(prefix_p2,
-				     1,
-				     strict_if(prefix_p3,
-					       (1 + prefix - 0xb7) as Field,
-					       strict_if(prefix_p4,
-							 1,
-							 (1 + prefix - 0xf7) as Field))));
+			               0,
+			               strict_if(prefix_p2,
+				                     1,
+				                     strict_if(prefix_p3,
+					                           (1 + prefix - 0xb7) as Field,
+					                           strict_if(prefix_p4,
+							                             1,
+							                             (1 + prefix - 0xf7) as Field))));
 
     let len = strict_if(prefix_p1,
-			1,
-			strict_if(prefix_p2,
-				  (prefix - 0x80) as Field,
-				  strict_if(prefix_p3,
-					    data_len(arr, (prefix - 0xb7) as Field),
-					    strict_if(prefix_p4,
-						      (prefix - 0xc0) as Field,
-						      data_len(arr, (prefix - 0xf7) as Field)))));
+			            1,
+			            strict_if(prefix_p2,
+				                  (prefix - 0x80) as Field,
+				                  strict_if(prefix_p3,
+					                        data_len(arr, (prefix - 0xb7) as Field),
+					                        strict_if(prefix_p4,
+						                              (prefix - 0xc0) as Field,
+						                              data_len(arr, (prefix - 0xf7) as Field)))));
     
     
     let data_typ = (prefix >= 0xc0) as Field;
@@ -99,7 +99,7 @@ fn decode_len<N>(arr: [u8; N]) -> RLP_Header
 // Decodes one level at a time by returning the number of (outer) fields,
 // the offsets of the fields, their lengths and their types (IS_STRING or IS_LIST).
 fn decode1<N, NUM_FIELDS>(input: [u8; N])
-			  -> RLP_List<NUM_FIELDS>
+			              -> RLP_List<NUM_FIELDS>
 {
     let mut num_fields: Field = 0; // Number of fields
     let mut dec_off = [0; NUM_FIELDS]; // Decoded offsets
@@ -117,38 +117,39 @@ fn decode1<N, NUM_FIELDS>(input: [u8; N])
 
     for i in 0..input.len()
     {
-	let range_p = ((offset as u64) <= (i as u64)) & ((i as u64) < (total_len as u64)); // Index range predicate
-	let header_read_p = range_p & (cur_field_total_len == 0); // 'Header read' predicate
+	    let range_p = ((offset as u64) <= (i as u64)) & ((i as u64) < (total_len as u64)); // Index range predicate
+	    let header_read_p = range_p & (cur_field_total_len == 0); // 'Header read' predicate
 
-	// If header needs to be read, we need to decode its length
-	let header: [u8; MAX_LEN_IN_BYTES + 1] = u8_take_with_offset(input, i);
-	let RLP_Header {offset: field_off, length: field_len, data_type: field_typ} = decode_len(header);
+	    // If header needs to be read, we need to decode its length
+	    let header: [u8; MAX_LEN_IN_BYTES + 1] = u8_take_with_offset(input, i);
+	    let RLP_Header {offset: field_off, length: field_len, data_type: field_typ} = decode_len(header);
 
-	// If in 'header read' mode, take note of total length of payload (i.e. including offset).
-	cur_field_total_len = (header_read_p as Field)*(field_len + field_off) + (1 - header_read_p as Field)* cur_field_total_len;
-	
-	// Place these in output arrays if necessary.
-	for j in 0..NUM_FIELDS
-	{
-	    let index_p = (range_p & header_read_p & (j == num_fields)) as Field;
-	    dec_off[j] = index_p * (i + field_off) + (1-index_p) * dec_off[j];
-	    dec_len[j] = index_p * field_len + (1-index_p)* dec_len[j];
-	    dec_typ[j] = index_p * field_typ + (1-index_p)*dec_typ[j];
-	}
-	
-	// Increment ptr if wihin range and not in 'header read' mode
-	cur_field_ptr += (range_p as Field)*(1 - header_read_p as Field);
+	    // If in 'header read' mode, take note of total length of payload (i.e. including offset).
+	    cur_field_total_len = (header_read_p as Field)*(field_len + field_off) + (1 - header_read_p as Field)* cur_field_total_len;
+	    
+	    // Place these in output arrays if necessary.
+	    for j in 0..NUM_FIELDS
+	    {
+	        let index_p = (range_p & header_read_p & (j == num_fields)) as Field;
+	        
+	        dec_off[j] = index_p * (i + field_off) + (1-index_p) * dec_off[j];
+	        dec_len[j] = index_p * field_len + (1-index_p)* dec_len[j];
+	        dec_typ[j] = index_p * field_typ + (1-index_p)*dec_typ[j];
+	    }
+	    
+	    // Increment ptr if wihin range and not in 'header read' mode
+	    cur_field_ptr += (range_p as Field)*(1 - header_read_p as Field);
 
-	// If we are done with a field (i.e. cur_field_ptr == cur_field_total_len),
-	let field_end_p = range_p & (cur_field_ptr == cur_field_total_len - 1);
-	// reset field ptr and increment field number.
-	// Only do this if we are within range!
-	cur_field_ptr = (1 - field_end_p as Field) * cur_field_ptr;
-	cur_field_total_len = (1 - field_end_p as Field)*cur_field_total_len;
-	num_fields += field_end_p as Field;
+	    // If we are done with a field (i.e. cur_field_ptr == cur_field_total_len),
+	    let field_end_p = range_p & (cur_field_ptr == cur_field_total_len - 1);
+	    // reset field ptr and increment field number.
+	    // Only do this if we are within range!
+	    cur_field_ptr = (1 - field_end_p as Field) * cur_field_ptr;
+	    cur_field_total_len = (1 - field_end_p as Field)*cur_field_total_len;
+	    num_fields += field_end_p as Field;
 
-	// Ensure number of fields is not too big
-	assert((num_fields as u64) <= (NUM_FIELDS as u64));
+	    // Ensure number of fields is not too big
+	    assert((num_fields as u64) <= (NUM_FIELDS as u64));
     }
 
     RLP_List::new(dec_off, dec_len, dec_typ, num_fields)
@@ -217,8 +218,8 @@ fn u8_take_with_offset<N, M>(arr: [u8; N], offset: comptime Field) -> [u8; M]
 
     for i in 0..M
     {
-	let j = (((i + offset) as u64) < N) as Field * (i + offset); // Restrict to proper range and fill with arr[0] otherwise.
-	out[i] = arr[j];
+	    let j = (((i + offset) as u64) < N) as Field * (i + offset); // Restrict to proper range and fill with arr[0] otherwise.
+	    out[i] = arr[j];
     }
 
     out
