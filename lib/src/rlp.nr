@@ -1,6 +1,4 @@
 // RLP decoding
-use dep::std::unsafe;
-
 global MAX_LEN_IN_BYTES: comptime Field = 2; // Max number of bytes required to represent length of a string or list
 global MAX_DATA_BYTES: comptime Field = 32;
 global MAX_FIELDS: comptime Field = 17;
@@ -217,7 +215,7 @@ fn rlp_length_check()
 
 fn take_with_offset<T, N, M>(arr: [T; N], offset: comptime Field) -> [T; M] // Take M elements from arr starting at offset
 {
-    let mut out = [unsafe::zeroed(); M];
+    let mut out = [arr[0]; M];
 
     for i in 0..M
     {
