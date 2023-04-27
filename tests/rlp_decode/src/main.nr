@@ -3,6 +3,6 @@ use dep::trie::rlp;
 
  fn main(input: [u8; 532])
 {
-    let rlp_list: (Field, [Field; trie::MAX_NUM_FIELDS], [Field; trie::MAX_NUM_FIELDS], [Field; trie::MAX_NUM_FIELDS]) = rlp::decode1(input);
-    constrain rlp_list.0 == 17;
+    let rlp_list: rlp::RLP_List<trie::MAX_NUM_FIELDS> = rlp::decode1(input);
+    constrain rlp_list.num_fields == 17;
 }
