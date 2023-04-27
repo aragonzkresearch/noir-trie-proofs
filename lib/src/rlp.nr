@@ -1,4 +1,6 @@
 // RLP decoding
+use dep::std::unsafe;
+
 global MAX_LEN_IN_BYTES: comptime Field = 2; // Max number of bytes required to represent length of a string or list
 global MAX_DATA_BYTES: comptime Field = 32;
 global MAX_FIELDS: comptime Field = 17;
@@ -59,15 +61,16 @@ fn data_len<N>(arr: [u8; N], lenlen: Field) -> Field
     out
 }
 
-fn decode_len<N>(arr: [u8; N]) -> RLP_Header
+fn decode_len<N>(arr: [u8; N]) -> RLP_Header // Determine offset, length and type of RLP-encoded data
 {
     let prefix = arr[0];
 
     // Prefix range predicates
-    let prefix_p1 = (prefix < 0x80);
-    let prefix_p2 = (prefix < 0xb8);
-    let prefix_p3 = (prefix < 0xc0);
-    let prefix_p4 = (prefix < 0xf8);
+    let prefix_p1 = (prefix < 0x80); // Single byte
+    let prefix_p2 = (prefix < 0xb8); // 0-55 byte string
+    let prefix_p3 = (prefix < 0xc0); // >55-byte string
+    let prefix_p4 = (prefix < 0xf8); // 0-55 byte list
+    // Else >55-byte string
     
     let offset = strict_if(prefix_p1,
 			               0,
@@ -121,7 +124,7 @@ fn decode1<N, NUM_FIELDS>(input: [u8; N])
 	    let header_read_p = range_p & (cur_field_total_len == 0); // 'Header read' predicate
 
 	    // If header needs to be read, we need to decode its length
-	    let header: [u8; MAX_LEN_IN_BYTES + 1] = u8_take_with_offset(input, i);
+	    let header: [u8; MAX_LEN_IN_BYTES + 1] = take_with_offset(input, i);
 	    let RLP_Header {offset: field_off, length: field_len, data_type: field_typ} = decode_len(header);
 
 	    // If in 'header read' mode, take note of total length of payload (i.e. including offset).
@@ -193,7 +196,7 @@ fn data_len_test()
 fn rlp_length_check()
 {
     // List test case
-    let in0: [u8; MAX_LEN_IN_BYTES + 1] = u8_take_with_offset([ 0xc7, 0xc0, 0xc1, 0xc0, 0xc3, 0xc0, 0xc1, 0xc0 ], 0);
+    let in0: [u8; MAX_LEN_IN_BYTES + 1] = take_with_offset([ 0xc7, 0xc0, 0xc1, 0xc0, 0xc3, 0xc0, 0xc1, 0xc0 ], 0);
     let x = decode_len(in0);
     assert(x.offset == 1);
     assert(x.length == 7);
@@ -212,9 +215,9 @@ fn rlp_length_check()
     assert(z.data_type == IS_STRING);
 }
 
-fn u8_take_with_offset<N, M>(arr: [u8; N], offset: comptime Field) -> [u8; M]
+fn take_with_offset<T, N, M>(arr: [T; N], offset: comptime Field) -> [T; M] // Take M elements from arr starting at offset
 {
-    let mut out = [0; M];
+    let mut out = [unsafe::zeroed(); M];
 
     for i in 0..M
     {
