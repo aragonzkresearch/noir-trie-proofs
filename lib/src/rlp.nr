@@ -107,51 +107,31 @@ fn decode1<N, NUM_FIELDS>(input: [u8; N])
     let mut dec_len = [0; NUM_FIELDS]; // Decoded lengths
     let mut dec_typ = [0; NUM_FIELDS]; // Decoded types
 
-    let RLP_Header {offset, length: payload_len, data_type: input_typ} = decode_len(input);
+    let mut RLP_Header {offset, length: payload_len, data_type: input_typ} = decode_len(input);
     let total_len = payload_len + offset;
 
     assert(input_typ == IS_LIST); // Should be dealing with a list
     assert((total_len as u64) <= (input.len() as u64)); // Payload should be fully contained in input array
 
-    let mut cur_field_ptr = 0; // Field byte cursor
-    let mut cur_field_total_len = 0; // Length of current field (including header)
-
-    for i in 0..input.len()
+    for i in 0..NUM_FIELDS
     {
-	    let range_p = ((offset as u64) <= (i as u64)) & ((i as u64) < (total_len as u64)); // Index range predicate
-	    let header_read_p = range_p & (cur_field_total_len == 0); // 'Header read' predicate
-
-	    // If header needs to be read, we need to decode its length
-	    let header: [u8; MAX_LEN_IN_BYTES + 1] = take_with_offset(input, i);
+        let loop_p = (payload_len != 0) as Field;
+        
+        let header: [u8; MAX_LEN_IN_BYTES + 1] = take_with_offset(input, offset);
 	    let RLP_Header {offset: field_off, length: field_len, data_type: field_typ} = decode_len(header);
+        let total_field_len = field_off + field_len;
 
-	    // If in 'header read' mode, take note of total length of payload (i.e. including offset).
-	    cur_field_total_len = (header_read_p as Field)*(field_len + field_off) + (1 - header_read_p as Field)* cur_field_total_len;
-	    
-	    // Place these in output arrays if necessary.
-	    for j in 0..NUM_FIELDS
-	    {
-	        let index_p = (range_p & header_read_p & (j == num_fields)) as Field;
-	        
-	        dec_off[j] = index_p * (i + field_off) + (1-index_p) * dec_off[j];
-	        dec_len[j] = index_p * field_len + (1-index_p)* dec_len[j];
-	        dec_typ[j] = index_p * field_typ + (1-index_p)*dec_typ[j];
-	    }
-	    
-	    // Increment ptr if wihin range and not in 'header read' mode
-	    cur_field_ptr += (range_p as Field)*(1 - header_read_p as Field);
+        // Assign these to 0 if loop predicate false
+        dec_off = set(dec_off, i, loop_p*(offset + field_off));
+	    dec_len = set(dec_len, i, loop_p*(field_len));
+        dec_typ = set(dec_typ, i, loop_p*(field_typ));
 
-	    // If we are done with a field (i.e. cur_field_ptr == cur_field_total_len),
-	    let field_end_p = range_p & (cur_field_ptr == cur_field_total_len - 1);
-	    // reset field ptr and increment field number.
-	    // Only do this if we are within range!
-	    cur_field_ptr = (1 - field_end_p as Field) * cur_field_ptr;
-	    cur_field_total_len = (1 - field_end_p as Field)*cur_field_total_len;
-	    num_fields += field_end_p as Field;
-
-	    // Ensure number of fields is not too big
-	    assert((num_fields as u64) <= (NUM_FIELDS as u64));
+        offset += loop_p*total_field_len;
+        payload_len -= loop_p*total_field_len;
+        num_fields += loop_p;
     }
+
+    // TODO: Assert that we have exhausted the array
 
     RLP_List::new(dec_off, dec_len, dec_typ, num_fields)
 }
@@ -213,14 +193,14 @@ fn rlp_length_check()
     assert(z.data_type == IS_STRING);
 }
 
-fn take_with_offset<T, N, M>(arr: [T; N], offset: comptime Field) -> [T; M] // Take M elements from arr starting at offset
+fn take_with_offset<T, N, M>(arr: [T; N], offset: Field) -> [T; M] // Take M elements from arr starting at offset
 {
     let mut out = [arr[0]; M];
 
     for i in 0..M
     {
 	    let j = (((i + offset) as u64) < N) as Field * (i + offset); // Restrict to proper range and fill with arr[0] otherwise.
-	    out[i] = arr[j];
+	    out[i] = ref(arr, j);
     }
 
     out
@@ -230,4 +210,31 @@ fn strict_if(pred: bool, x: Field, y: Field) -> Field
 {
     let pred_f = pred as Field;
     pred_f*x + (1-pred_f)*y
+}
+
+fn ref<T,N>(arr: [T; N], i: Field) -> T
+{
+    let mut out = arr[0];
+
+    for j in 0..arr.len()
+    {
+        if i == j
+        {
+            out = arr[j];
+        }
+    }
+    out
+}
+
+fn set<T,N>(mut arr: [T; N], i: Field, x: T) -> [T; N]
+{
+    for j in 0..arr.len()
+    {
+        if j == i
+        {
+            arr[j] = x;
+        }
+    }
+
+    arr
 }
