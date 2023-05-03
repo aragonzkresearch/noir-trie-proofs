@@ -133,48 +133,45 @@ fn key_as_nibbles(key: [u8; KEY_LENGTH]) -> [u4; NIBBLE_LENGTH]
 // Returns nibbles in a right-padded array together with the number of nibbles.
 fn compact_decode<N>(input: [u8; N], offset: Field, length: Field) -> ([u4; NIBBLE_LENGTH], Field)
 {
+    // TODO: Put this check elsewhere
+    assert(((offset + length) as u64) < input.len() as u64);
+    
     let mut nibble = [0 as u4; NIBBLE_LENGTH];
     let mut out_length = 0;
 
     // The node slots will each be the RLP encoding of a string of length <= 55, i.e. they will be <= 56 bytes long,
     // meaning the payload is <= 112 bytes long. Thus, the RLP node header will contain <= 1 length byte so that
     // the data offset of the first slot is either 2 or 3.
-    for j in 2..4
-    {
-	    if j == offset
-	    {
-	        let first_nibble = (input[j] >> 4) as u4;
-	        let parity = first_nibble as u1;
+	let first_nibble = (input[offset] >> 4) as u4;
+	let parity = first_nibble as u1;
 
-	        if parity == 1
-	        {
-		        nibble[0] = (input[j] & 0x0f) as u4;
-		        for i in 1..KEY_LENGTH
-		        {
- 		            if i as u64 < length as u64
- 		            {
-			            let x = input[j + i];
- 			            nibble[2*i - 1] = (x >> 4) as u4;
-			            nibble[2*i] = (x & 0x0f) as u4;
- 		            }
-		        }
-	        }
-	        else
-	        {
-		        for i in 0..KEY_LENGTH
-		        {
- 		            if (i as u64 + 1) < length as u64
- 		            {
-			            let x = input[j + i + 1];
- 			            nibble[2*i] = (x >> 4) as u4;
-			            nibble[2*i + 1] = (x & 0x0f) as u4;
- 		            }
-		        }
-	        }
+	if parity == 1
+	{
+		nibble[0] = (input[offset] & 0x0f) as u4;
+		for i in 1..KEY_LENGTH
+		{
+ 		    if i as u64 < length as u64
+ 		    {
+			    let x = input[offset + i];
+ 			    nibble[2*i - 1] = (x >> 4) as u4;
+			    nibble[2*i] = (x & 0x0f) as u4;
+ 		    }
+		}
+	}
+	else
+	{
+		for i in 0..KEY_LENGTH
+		{
+ 		    if (i as u64 + 1) < length as u64
+ 		    {
+			    let x = input[offset + i + 1];
+ 			    nibble[2*i] = (x >> 4) as u4;
+			    nibble[2*i + 1] = (x & 0x0f) as u4;
+ 		    }
+		}
+	}
 
-	        out_length = 2*length + (parity as Field) - 2;
-	    }
-    }
+	out_length = 2*length + (parity as Field) - 2;
     let out = (nibble, out_length);
     out
 }
@@ -220,17 +217,10 @@ fn get<N>(
 	    // rlp_list.offset[1] will be <= 1 + 1 (RLP list header) + 1 (slot 1 header) + KEY_LENGTH + 1 = KEY_LENGTH + 4
 	    // but also > 2
 	    
-	    for j in 3..(KEY_LENGTH + 5)
-	    {
-	        if j == rlp_list.offset[1]
-	        {
 		        for i in 0..KEY_LENGTH
 		        {
-		            value[i] = node[j + i];
+		            value[i] = node[rlp_list.offset[1] + i];
 		        }
-	        }
-	    }
-
     }
     else
     {
