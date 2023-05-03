@@ -208,7 +208,7 @@ fn get<N>(
 	    {
 	        if i as u64 >= key_offset as u64
 	        {
-		        success_pred &= u4_ref(nib,nib_ptr) == key[i];
+		        success_pred &= nib[nib_ptr] == key[i];
 		        nib_ptr += 1;
 	        }
 	    }
@@ -234,59 +234,19 @@ fn get<N>(
     }
     else
     {
-	    let cur_nibble = u4_ref(key, key_offset);
-	    value_length = ref(rlp_list.length, cur_nibble as Field);
+	    let cur_nibble = key[key_offset];
+	    value_length = rlp_list.length[cur_nibble as Field];
 
 	    key_offset += 1;
 
-	    let nibble_offset = ref(rlp_list.offset, cur_nibble as Field);
-
-	    for i in 0..(node.len() - 33) // TODO
-	    {
-	        if i == nibble_offset
-	        {
-		        for j in 0..KEY_LENGTH
-		        {
-		            value[j] = node[i + j];
-		        }
-	        }
-	    }
-    }
-
+	    let nibble_offset = rlp_list.offset[cur_nibble as Field];
+		for j in 0..KEY_LENGTH
+		{
+		    value[j] = node[nibble_offset + j];
+		}
+	}
+    
     let out = (success_pred, value, value_length, key_offset);
-
-    out
-}
-
-// Dynamic array indexing
-fn ref<T,N>(arr: [T; N], i: Field) -> T // 0 <= i < N
-{
-    
-    let mut out = arr[0];
-    
-    for j in 0..arr.len()
-    {
-	    if j == i
-	    {
-	        out = arr[j];
-	    }
-    }
-
-    out
-}
-
-// Needed to work around casting issues
-fn u4_ref<N>(arr: [u4; N], i: Field) -> u4 // 0 <= i < N
-{
-    let mut out = arr[0];
-    
-    for j in 0..arr.len()
-    {
-	    if j == i
-	    {
-	        out = arr[j];
-	    }
-    }
 
     out
 }

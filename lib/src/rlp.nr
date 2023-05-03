@@ -122,9 +122,9 @@ fn decode1<N, NUM_FIELDS>(input: [u8; N])
         let total_field_len = field_off + field_len;
 
         // Assign these to 0 if loop predicate false
-        dec_off = set(dec_off, i, loop_p*(offset + field_off));
-	    dec_len = set(dec_len, i, loop_p*(field_len));
-        dec_typ = set(dec_typ, i, loop_p*(field_typ));
+        dec_off[i] = loop_p*(offset + field_off);
+	    dec_len[i] = loop_p*(field_len);
+        dec_typ[i] = loop_p*(field_typ);
 
         offset += loop_p*total_field_len;
         payload_len -= loop_p*total_field_len;
@@ -200,7 +200,7 @@ fn take_with_offset<T, N, M>(arr: [T; N], offset: Field) -> [T; M] // Take M ele
     for i in 0..M
     {
 	    let j = (((i + offset) as u64) < N) as Field * (i + offset); // Restrict to proper range and fill with arr[0] otherwise.
-	    out[i] = ref(arr, j);
+	    out[i] = arr[j];
     }
 
     out
@@ -210,31 +210,4 @@ fn strict_if(pred: bool, x: Field, y: Field) -> Field
 {
     let pred_f = pred as Field;
     pred_f*x + (1-pred_f)*y
-}
-
-fn ref<T,N>(arr: [T; N], i: Field) -> T
-{
-    let mut out = arr[0];
-
-    for j in 0..arr.len()
-    {
-        if i == j
-        {
-            out = arr[j];
-        }
-    }
-    out
-}
-
-fn set<T,N>(mut arr: [T; N], i: Field, x: T) -> [T; N]
-{
-    for j in 0..arr.len()
-    {
-        if j == i
-        {
-            arr[j] = x;
-        }
-    }
-
-    arr
 }
