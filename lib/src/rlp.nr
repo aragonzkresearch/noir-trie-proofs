@@ -1,11 +1,14 @@
 // RLP decoding
-global MAX_LEN_IN_BYTES: comptime Field = 2; // Max number of bytes required to represent length of a string or list
-global MAX_DATA_BYTES: comptime Field = 32;
-global MAX_FIELDS: comptime Field = 17;
 
-// Enum
-global IS_STRING: comptime Field = 0;
-global IS_LIST: comptime Field = 1;
+// Constants expressing maximum data sizes
+// TODO: Convert these to function parameters
+global MAX_LEN_IN_BYTES: Field = 2; // Max number of bytes required to represent length of a string or list
+global MAX_DATA_BYTES: Field = 32;
+global MAX_FIELDS: Field = 17;
+
+// RLP data type enum
+global IS_STRING: Field = 0;
+global IS_LIST: Field = 1;
 
 // RLP header struct obtained from length decoding
 struct RLP_Header
@@ -113,25 +116,27 @@ fn decode1<N, NUM_FIELDS>(input: [u8; N])
     assert(input_typ == IS_LIST); // Should be dealing with a list
     assert((total_len as u64) <= (input.len() as u64)); // Payload should be fully contained in input array
 
+    // Fill up the NUM_FIELDS fields
     for i in 0..NUM_FIELDS
     {
-        let loop_p = (payload_len != 0) as Field;
+        let loop_p = (offset != total_len) as Field; // Loop predicate: Take action only if there is data left to parse.
         
-        let header: [u8; MAX_LEN_IN_BYTES + 1] = take_with_offset(input, offset);
-	    let RLP_Header {offset: field_off, length: field_len, data_type: field_typ} = decode_len(header);
-        let total_field_len = field_off + field_len;
+        let header: [u8; MAX_LEN_IN_BYTES + 1] = take_with_offset(input, offset); // Read field header
+	    let RLP_Header {offset: field_off, length: field_len, data_type: field_typ} = decode_len(header); // Decode length of field
+        let total_field_len = field_off + field_len; // Length of field + header
 
-        // Assign these to 0 if loop predicate false
+        // Assign decoded data and set them to 0 if loop predicate false (Convenient for testing; could remove this later)
         dec_off[i] = loop_p*(offset + field_off);
 	    dec_len[i] = loop_p*(field_len);
         dec_typ[i] = loop_p*(field_typ);
 
+        // Calculate new offset
         offset += loop_p*total_field_len;
-        payload_len -= loop_p*total_field_len;
         num_fields += loop_p;
     }
 
-    // TODO: Assert that we have exhausted the array
+    // Ensure that we have exhausted the data
+    assert(total_len == offset);
 
     RLP_List::new(dec_off, dec_len, dec_typ, num_fields)
 }
