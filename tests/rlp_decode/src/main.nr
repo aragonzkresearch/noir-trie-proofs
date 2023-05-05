@@ -4,5 +4,5 @@ use dep::trie::rlp;
  fn main(input: [u8; 532])
 {
     let rlp_list: rlp::RLP_List<trie::MAX_NUM_FIELDS> = rlp::decode1(input);
-    constrain rlp_list.num_fields == 17;
+    assert(rlp_list.num_fields == 17);
 }
