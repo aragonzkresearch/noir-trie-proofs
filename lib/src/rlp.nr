@@ -141,6 +141,58 @@ fn decode1<N, NUM_FIELDS>(input: [u8; N])
     RLP_List::new(dec_off, dec_len, dec_typ, num_fields)
 }
 
+// RLP list decoder for lists of strings of length < 56 bytes
+fn decode1_small<N, NUM_FIELDS>(input: [u8; N])
+			              -> RLP_List<NUM_FIELDS>
+{
+    let mut num_fields: Field = 0; // Number of fields
+    let mut dec_off = [0; NUM_FIELDS]; // Decoded offsets
+    let mut dec_len = [0; NUM_FIELDS]; // Decoded lengths
+    let mut dec_typ = [0; NUM_FIELDS]; // Decoded types
+
+    let mut RLP_Header {offset, length: payload_len, data_type: input_typ} = decode_len(input);
+    let total_len = payload_len + offset;
+
+    assert(input_typ == IS_LIST); // Should be dealing with a list
+    assert((total_len as u64) <= (input.len() as u64)); // Payload should be fully contained in input array
+
+    // Fill up the NUM_FIELDS fields
+    for i in 0..NUM_FIELDS
+    {
+        let loop_p = (offset != total_len) as Field; // Loop predicate: Take action only if there is data left to parse.
+        
+        let header = input[offset]; // Read field header
+
+        assert(header < 0xb8); // Header must represent a string of length < 56 bytes.
+
+        let field_typ = IS_STRING;
+
+        let single_byte_p = (header < 0x80) as Field; // 1 if `header` represents a single byte.
+
+        let field_off = 1 - single_byte_p; // If `header` < 0x80, then we are dealing with a single byte whose value
+        // is given by header. Else, the string begins at the following index.
+
+        let field_len = single_byte_p*1 + (1-single_byte_p)*((header - 0x80) as Field); // Single byte means len = 1,
+        // else subtract 0x80 from the header to determine len.
+
+        let total_field_len = field_off + field_len; // Length of field + header
+
+        // Assign decoded data and set them to 0 if loop predicate false (Convenient for testing; could remove this later)
+        dec_off[i] = loop_p*(offset + field_off);
+	    dec_len[i] = loop_p*(field_len);
+        dec_typ[i] = loop_p*(field_typ);
+
+        // Calculate new offset
+        offset += loop_p*total_field_len;
+        num_fields += loop_p;
+    }
+
+    // Ensure that we have exhausted the data
+    assert(total_len == offset);
+
+    RLP_List::new(dec_off, dec_len, dec_typ, num_fields)
+}
+
 #[test]
 fn rlp_decode_test()
 {
