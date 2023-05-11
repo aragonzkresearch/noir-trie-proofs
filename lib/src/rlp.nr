@@ -68,7 +68,7 @@ fn decode_len<N>(arr: [u8; N]) -> RLP_Header // Determine offset, length and typ
     let prefix_p2 = (prefix < 0xb8); // 0-55 byte string
     let prefix_p3 = (prefix < 0xc0); // >55-byte string
     let prefix_p4 = (prefix < 0xf8); // 0-55 byte list
-    // Else >55-byte string
+    // Else >55-byte list
     
     let offset = strict_if(prefix_p1,
 			               0,
