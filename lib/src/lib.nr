@@ -4,7 +4,9 @@ mod rlp; // Module for required RLP encoding/decoding
 
 global KEY_LENGTH: comptime Field = 32; // key length in bytes; <= 55 for simplicity
 
-global NIBBLE_LENGTH: comptime Field = 64;
+global MAX_COMPACT_ENCODE_LENGTH: Field = 33; // = KEY_LENGTH + 1
+
+global NIBBLE_LENGTH: comptime Field = 64; // = 2*KEY_LENGTH
 
 global MAX_NODE_LENGTH: comptime Field = 532; // = MAX_RLP_LIST_HEADER_LENGTH (= 1 + MAX_LENGTH_BYTES)
 //   + 16*MAX_RLP_ELEMENT_LENGTH (= 16*(1 + KEY_LENGTH))
@@ -130,48 +132,35 @@ fn key_as_nibbles(key: [u8; KEY_LENGTH]) -> [u4; NIBBLE_LENGTH]
 }
 
 // Decode leaf/extension node's first slot into nibbles
+// Assume this slot is a 33-byte right-padded array
 // Returns nibbles in a right-padded array together with the number of nibbles.
-fn compact_decode<N>(input: [u8; N], offset: Field, length: Field) -> ([u4; NIBBLE_LENGTH], Field)
+fn compact_decode(input: [u8; MAX_COMPACT_ENCODE_LENGTH], length: Field) -> ([u4; NIBBLE_LENGTH], Field)
 {
-    // TODO: Put this check elsewhere
-    assert(((offset + length) as u64) < input.len() as u64);
-    
     let mut nibble = [0 as u4; NIBBLE_LENGTH];
     let mut out_length = 0;
 
-    // The node slots will each be the RLP encoding of a string of length <= 55, i.e. they will be <= 56 bytes long,
-    // meaning the payload is <= 112 bytes long. Thus, the RLP node header will contain <= 1 length byte so that
-    // the data offset of the first slot is either 2 or 3.
-	let first_nibble = (input[offset] >> 4) as u4;
-	let parity = first_nibble as u1;
+	let mut prev_nibbles = ((input[0] >> 4) as u4, (input[0] & 0x0f) as u4);
+    let mut cur_nibbles = (0,0);
+	let parity = prev_nibbles.0 as u1;
 
-	if parity == 1
-	{
-		nibble[0] = (input[offset] & 0x0f) as u4;
-		for i in 1..KEY_LENGTH
-		{
- 		    if i as u64 < length as u64
- 		    {
-			    let x = input[offset + i];
- 			    nibble[2*i - 1] = (x >> 4) as u4;
-			    nibble[2*i] = (x & 0x0f) as u4;
- 		    }
-		}
-	}
-	else
-	{
-		for i in 0..KEY_LENGTH
-		{
- 		    if (i as u64 + 1) < length as u64
- 		    {
-			    let x = input[offset + i + 1];
- 			    nibble[2*i] = (x >> 4) as u4;
-			    nibble[2*i + 1] = (x & 0x0f) as u4;
- 		    }
-		}
-	}
+    // Consistency check
+    assert(((1-parity) as u4)*prev_nibbles.1 == 0);
+
+    for i in 0..KEY_LENGTH
+    {
+        let x = input[i + 1];
+        cur_nibbles = ((x >> 4) as u4, (x & 0x0f) as u4);
+
+        nibble[2*i] = (parity as u4)*prev_nibbles.1 + (1 - (parity as u4))*cur_nibbles.0;
+        nibble[2*i + 1] = (parity as u4)*cur_nibbles.0 + (1 - (parity as u4))*cur_nibbles.1;
+
+        prev_nibbles = cur_nibbles;
+    }
 
 	out_length = 2*length + (parity as Field) - 2;
+
+
+    assert((out_length as u64) <= (NIBBLE_LENGTH as u64)); // Sanity check
     let out = (nibble, out_length);
     out
 }
@@ -197,7 +186,8 @@ fn get<N>(
 
     if num_fields == 2
     {
-	    let (nib, niblen) = compact_decode(node, rlp_list.offset[0], rlp_list.length[0]);
+        let first_slot: [u8; KEY_LENGTH + 1] = rlp::take_with_offset(node,rlp_list.offset[0]);
+	    let (nib, niblen) = compact_decode(first_slot, rlp_list.length[0]);
 	    assert(NIBBLE_LENGTH as u64 - key_offset as u64 >= niblen as u64);
 
 	    let mut nib_ptr = 0;
@@ -224,7 +214,7 @@ fn get<N>(
     }
     else
     {
-	    let cur_nibble = key[key_offset];
+	    let cur_nibble = key[key_offset * (((key_offset as u64) < (NIBBLE_LENGTH as u64)) as Field)]; // TODO: Avoid this.
 	    value_length = rlp_list.length[cur_nibble as Field];
 
 	    key_offset += 1;
@@ -298,15 +288,15 @@ fn nibble_check()
 #[test]
 fn compact_decode_test()
 {
-    let (nibble0, len0) = compact_decode([0x00,0x00,0x11, 0x23, 0x45], 2, 3); // TODO: Legit header!
+    let (nibble0, len0) = compact_decode([0x11, 0x23, 0x45,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0], 3); // TODO: Legit header!
     assert(len0 == 5);
     assert([nibble0[0], nibble0[1], nibble0[2], nibble0[3], nibble0[4]] == [1,2,3,4,5]);
 
-    let (nibble1, len1) = compact_decode([0x00,0x00,0x20, 0x0f, 0x1c, 0xb8], 2, 4); // TODO
+    let (nibble1, len1) = compact_decode([0x20, 0x0f, 0x1c, 0xb8, 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0], 4); // TODO
     assert(len1 == 6);
     assert([nibble1[0], nibble1[1], nibble1[2], nibble1[3], nibble1[4], nibble1[5]] == [0,15,1,12,11,8]);
 
-    let (nibble2, len2) = compact_decode([0x10, 0x20, 0x30, 0x3f, 0x1c, 0xb8, 0x99, 0xab], 3, 3);
+    let (nibble2, len2) = compact_decode([0x3f, 0x1c, 0xb8, 0x99, 0xab, 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0], 3);
     assert(len2 == 5);
     assert([nibble2[0], nibble2[1], nibble2[2], nibble2[3], nibble2[4]] == [15,1,12,11,8]);
     
