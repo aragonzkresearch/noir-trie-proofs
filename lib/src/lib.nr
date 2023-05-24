@@ -15,7 +15,7 @@ global MAX_NODE_LENGTH: comptime Field = 532; // = MAX_RLP_LIST_HEADER_LENGTH (=
 global MAX_NUM_FIELDS: Field = 17;
 
 // Ethereum trie proof verifier
-fn verify_proof<N>( // N *must* be a multiple of MAX_NODE_LENGTH!
+fn verify_proof_fixed<N>( // N *must* be a multiple of MAX_NODE_LENGTH!
     root_hash: [u8; KEY_LENGTH], // Hash of root, i.e. first, node.
     path: [u8; N], // RLP encoded proof path; assumed to be obtained by right-padding each node (e.g. with zeros) to form a list of length MAX_NODE_LENGTH and concatenated in order.
     depth: Field, // Depth of path. Necessary for technical reasons.
@@ -23,7 +23,7 @@ fn verify_proof<N>( // N *must* be a multiple of MAX_NODE_LENGTH!
     value: [u8; KEY_LENGTH], // Value to verify
     mut value_length: Field) -> bool // Length of value to verify
 {
-    assert((N as u64) % (MAX_NODE_LENGTH as u64) == 0); // Check that N is a multiple of MAX_NODE_LENGTH
+    assert((N as u32) % (MAX_NODE_LENGTH as u32) == 0); // Check that N is a multiple of MAX_NODE_LENGTH
     
     let _r = root_hash; // TODO: Delete once keccak256 is ready
     // let mut prev_hash = root_hash; // TODO: Uncomment when keccak256 is ready
@@ -51,10 +51,10 @@ fn verify_proof<N>( // N *must* be a multiple of MAX_NODE_LENGTH!
 	        // let node_length = { let rlp_header = rlp::decode_length(cur_node); rlp_header.offset + rlp_header.length }; // Determine length of node
 	        // let cur_hash = ... ; // TODO: Compute keccak256 hash
 	        // assert(cur_hash == prev_hash); // Make sure hashes are consistent
- 	        let lookup = get(key_nibbles, key_offset, cur_node); // Follow node
- 	        cur_value = lookup.1;
-	        cur_value_length = lookup.2;
- 	        key_offset = lookup.3;
+ 	        let lookup = get_fixed(key_nibbles, key_offset, cur_node); // Follow node
+ 	        cur_value = lookup.0;
+	        cur_value_length = lookup.1;
+ 	        key_offset = lookup.2;
 
 	        // let prev_hash = cur_hash;
 	    }
@@ -83,7 +83,7 @@ fn verify_proof<N>( // N *must* be a multiple of MAX_NODE_LENGTH!
 // Encode value according to 'node cap function' (see Appendix D of Ethereum Yellow Paper)
 fn encode_value<N>(value: [u8; N], value_length: Field) -> ([u8; KEY_LENGTH], Field)
 {
-    assert(value.len() as u64 >= value_length as u64);
+    assert(value.len() as u32 >= value_length as u32);
 
     let mut out_value = [0; KEY_LENGTH];
     
@@ -93,7 +93,7 @@ fn encode_value<N>(value: [u8; N], value_length: Field) -> ([u8; KEY_LENGTH], Fi
  	    
 	    out
     }
-    else if value_length as u64 < 31 // Check for sufficiently short string
+    else if value_length as u32 < 31 // Check for sufficiently short string
     {
 	    out_value[0] = 0x80 + value_length as u8;
 	    
@@ -141,9 +141,14 @@ fn compact_decode(input: [u8; MAX_COMPACT_ENCODE_LENGTH], length: Field) -> ([u4
 
 	let mut prev_nibbles = ((input[0] >> 4) as u4, (input[0] & 0x0f) as u4);
     let mut cur_nibbles = (0,0);
-	let parity = prev_nibbles.0 as u1;
+    
+    let first_nibble = prev_nibbles.0;
+	let parity = first_nibble as u1;
 
-    // Consistency check
+    // Consistency checks
+    // The first nibble should always be less than 4.
+    assert(first_nibble < 4);
+    // Parity consistency: If we are dealing with an even number of nibbles, then the second nibble should be 0.
     assert(((1-parity) as u4)*prev_nibbles.1 == 0);
 
     for i in 0..KEY_LENGTH
@@ -160,61 +165,124 @@ fn compact_decode(input: [u8; MAX_COMPACT_ENCODE_LENGTH], length: Field) -> ([u4
 	out_length = 2*length + (parity as Field) - 2;
 
 
-    assert((out_length as u64) <= (NIBBLE_LENGTH as u64)); // Sanity check
+    assert((out_length as u32) <= (NIBBLE_LENGTH as u32)); // Sanity check
     let out = (nibble, out_length);
     out
 }
 
-
-// Look up nibble (or sequence of nibbles) in RLP-encoded node
-fn get<N>(
-    key: [u4; NIBBLE_LENGTH],
-    mut key_offset: Field,
-    node: [u8; N]) -> (
-    bool, // Predicate indicating success or failure
-    [u8; KEY_LENGTH], // Value obtained from node
-    Field, // Length of value obtained from node (between 0 and KEY_LENGTH)
-    Field) // New key offset if follow was successful
+// Check whether RLP-decoded list represents a valid trie node
+fn valid_node_shape_p<M,N>(
+    fixed_key_length_p: comptime bool, // Predicate indicating whether key length is fixed or variable
+    rlp_list: rlp::RLP_List<N>
+) -> bool
 {
-    let mut success_pred = true;
-    let rlp_list: rlp::RLP_List<MAX_NUM_FIELDS> = rlp::decode1(node);
     let num_fields = rlp_list.num_fields;
-    assert((num_fields == 2) | (num_fields == 17));
-
-    let mut value = [0; KEY_LENGTH];
-    let mut value_length = 0;
-
+    let slot_len = rlp_list.length;
+    
+    // First check the number of fields
     if num_fields == 2
     {
-        let first_slot: [u8; KEY_LENGTH + 1] = rlp::take_with_offset(node,rlp_list.offset[0]);
-	    let (nib, niblen) = compact_decode(first_slot, rlp_list.length[0]);
-	    assert(NIBBLE_LENGTH as u64 - key_offset as u64 >= niblen as u64);
+        // The first slot's length should be <= 1 (compact encoding header) + 32
+        assert((slot_len[0] as u32) <= ((KEY_LENGTH + 1) as u32));
+        
+        // The second slot's length should be <= 32
+        assert((slot_len[1] as u32) <= (KEY_LENGTH as u32));
 
-	    let mut nib_ptr = 0;
-	    for i in 0..key.len() // Should have key.len() == KEY_LENGTH
-	    {
-	        if i as u64 >= key_offset as u64
-	        {
-		        success_pred &= nib[nib_ptr] == key[i];
-		        nib_ptr += 1;
-	        }
-	    }
-	    
-	    value_length = rlp_list.length[1];
+        true
+    }
+    else if num_fields == 17
+    {
+        // The first 16 slots should be of length 32 or 0.
+        for i in 0..16
+        {
+            assert(slot_len[i]*(slot_len[i] - KEY_LENGTH) == 0);
+        }
 
-        key_offset += niblen;
+        // If we are dealing with a fixed key length, the last slot should be of length 0.
+        // Else it should be of length <= 32
+        assert((fixed_key_length_p & (slot_len[16] == 0))
+               | (!fixed_key_length_p & ((slot_len[16] as u32) <= (KEY_LENGTH as u32))));
 
-	    // rlp_list.offset[1] will be <= 1 + 1 (RLP list header) + 1 (slot 1 header) + KEY_LENGTH + 1 = KEY_LENGTH + 4
-	    // but also > 2
-	    
-		        for i in 0..KEY_LENGTH
-		        {
-		            value[i] = node[rlp_list.offset[1] + i];
-		        }
+        true
     }
     else
     {
-	    let cur_nibble = key[key_offset * (((key_offset as u64) < (NIBBLE_LENGTH as u64)) as Field)]; // TODO: Avoid this.
+        false
+    }
+}
+
+// Look up nibble (or sequence of nibbles) in RLP-encoded node
+fn get_fixed<N>(
+    key: [u4; NIBBLE_LENGTH],
+    mut key_offset: Field,
+    node: [u8; N]) ->
+    ([u8; KEY_LENGTH], // Value obtained from node
+    Field, // Length of value obtained from node (between 0 and KEY_LENGTH)
+    Field) // New key offset
+{
+    let rlp_list: rlp::RLP_List<MAX_NUM_FIELDS> = rlp::decode1(node);
+    let num_fields = rlp_list.num_fields;
+
+    // Make sure node has the right shape, i.e. that it has the right number
+    // of slots and that its slots have the right lengths.
+    assert(valid_node_shape_p(true, rlp_list));
+    
+    let mut value = [0; KEY_LENGTH];
+    let mut value_length = 0;
+
+    if num_fields == 2 // If we are dealing with a leaf/extension node
+    {
+        let first_slot: [u8; KEY_LENGTH + 1] = rlp::take_with_offset(node,rlp_list.offset[0]);
+	    let (nib, niblen) = compact_decode(first_slot, rlp_list.length[0]);
+
+        // Length check. Should not go past 64 nibbles.
+	    assert(NIBBLE_LENGTH as u32 - key_offset as u32 >= niblen as u32);
+
+        // Check that the `niblen` nibbles in the first slot match up with the `niblen` nibbles
+        // in `key` starting from offset `key_offset`.
+
+        // TODO: Fix this problematic code!
+        // for i in 0..NIBBLE_LENGTH
+        // {
+        //     if (i as u32) < (niblen as u32)
+        //     {
+        //         assert(nib[key_offset + i] == key[i]);
+        //     }
+        // }
+
+        // Slightly more complicated working code
+        let mut nib_ptr = 0;
+        for i in 0..NIBBLE_LENGTH
+        {
+            if ((i as u32) >= (key_offset as u32)) & ((i as u32) <= ((key_offset + niblen) as u32))
+            {
+                assert(nib[nib_ptr] == key[i]);
+                nib_ptr += 1;
+            }
+        }
+
+        // Store length of value obtained
+	    value_length = rlp_list.length[1];
+
+        // Increment offset
+        key_offset += niblen;
+
+	    // Store value
+		for i in 0..KEY_LENGTH
+		{
+		    value[i] = node[rlp_list.offset[1] + i];
+		}
+
+        // Ensure we've followed the right kind of node, i.e. if we're not at the end of the key,
+        // we should have followed an extension node, and if we are, then we should have followed a leaf node.
+        let node_type = first_slot[0] >> 4;
+        assert(((key_offset == NIBBLE_LENGTH) & (node_type > 1))
+               | (key_offset != NIBBLE_LENGTH) & (node_type < 2));
+        
+    }
+    else
+    {
+	    let cur_nibble = key[key_offset * (((key_offset as u32) < (NIBBLE_LENGTH as u32)) as Field)]; // TODO: Avoid this.
 	    value_length = rlp_list.length[cur_nibble as Field];
 
 	    key_offset += 1;
@@ -226,7 +294,7 @@ fn get<N>(
 		}
 	}
     
-    let out = (success_pred, value, value_length, key_offset);
+    let out = (value, value_length, key_offset);
 
     out
 }
@@ -256,20 +324,21 @@ fn cryptopunk1() // Who owns the first cryptopunk? cf. https://www.youtube.com/w
     let key = [0xed,0x65,0xb0,0x32,0xd5,0xa5,0xfa,0x3a,0x5b,0x65,0x44,0x56,0x6e,0xe4,0x6a,0x0f,0x6b,0x8f,0xe8,0xb1,0x37,0x5e,0xc8,0x78,0xdc,0x3b,0xe6,0x58,0x0b,0x07,0x84,0x95]; // keccak256([0xbb,0xc7,0x0d,0xb1,0xb6,0xc7,0xaf,0xd1,0x1e,0x79,0xc0,0xfb,0x00,0x51,0x30,0x04,0x58,0xf1,0xa3,0xac,0xb8,0xee,0x97,0x89,0xd9,0xb6,0xb2,0x6c,0x61,0xad,0x9b,0xc7]
     let value = [0xb8,0x8f,0x61,0xe6,0xfb,0xda,0x83,0xfb,0xff,0xfa,0xbe,0x36,0x41,0x12,0x13,0x74,0x80,0x39,0x80,0x18,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00];
     let value_length = 20;
-    assert(verify_proof([0; KEY_LENGTH], path, depth, key, value, value_length));
+    assert(verify_proof_fixed
+           ([0; KEY_LENGTH], path, depth, key, value, value_length));
 
 }
 
 // Auxiliary function tests
 #[test]
-fn lookup_test()
+fn fixed_key_lookup_test()
 {
     let x3 = [246,159,32,176,50,213,165,250,58,91,101,68,86,110,228,106,15,107,143,232,177,55,94,200,120,220,59,230,88,11,7,132,149,149,148,184,143,97,230,251,218,131,251,255,250,190,54,65,18,19,116,128,57,128,24,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
     let rlp_list3: rlp::RLP_List<MAX_NUM_FIELDS> = rlp::decode1(x3);
     assert(rlp_list3.num_fields == 2);
     assert(rlp_list3.length[0] == 31);
     assert(rlp_list3.length[1] == 21);
-    let (_success_pred, value3, value_length3, _key_offset3) = get(
+    let (value3, value_length3, _key_offset3) = get_fixed(
 	    key_as_nibbles([0xed,0x65,0xb0,0x32,0xd5,0xa5,0xfa,0x3a,0x5b,0x65,0x44,0x56,0x6e,0xe4,0x6a,0x0f,0x6b,0x8f,0xe8,0xb1,0x37,0x5e,0xc8,0x78,0xdc,0x3b,0xe6,0x58,0x0b,0x07,0x84,0x95]),
 	    4,
 	    x3);
