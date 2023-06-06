@@ -15,7 +15,7 @@ global MAX_NODE_LENGTH: comptime Field = 532; // = MAX_RLP_LIST_HEADER_LENGTH (=
 
 global MAX_NUM_FIELDS: Field = 17;
 
-// Ethereum trie proof verifier
+// Ethereum trie proof verifier for 32 byte long keys
 fn verify_proof_fixed<N>( // N *must* be a multiple of MAX_NODE_LENGTH!
     root_hash: [u8; KEY_LENGTH], // Hash of root, i.e. first, node.
     path: [u8; N], // RLP encoded proof path; assumed to be obtained by right-padding each node (e.g. with zeros) to form a list of length MAX_NODE_LENGTH and concatenated in order.
@@ -121,11 +121,13 @@ fn encode_value<N>(value: [u8; N], value_length: Field) -> ([u8; KEY_LENGTH], Fi
 }
 
 // Key-to-nibble conversion
-fn key_as_nibbles(key: [u8; KEY_LENGTH]) -> [u4; NIBBLE_LENGTH]
+fn key_as_nibbles<KEY_LEN, NIB_LEN>(key: [u8; KEY_LEN]) -> [u4; NIB_LEN]
 {
-    let mut nibkey = [0; NIBBLE_LENGTH];
+    assert(NIB_LEN == 2*KEY_LEN);
     
-    for i in 0..KEY_LENGTH
+    let mut nibkey = [0; NIB_LEN];
+    
+    for i in 0..KEY_LEN
     {
 	    nibkey[2*i + 1] = (key[i] & 0x0f) as u4;
 	    nibkey[2*i] = ((key[i] - nibkey[2*i + 1] as u8) >> 4) as u4;
@@ -217,7 +219,7 @@ fn valid_node_shape_p<M,N>(
 // Look up nibble (or sequence of nibbles) in RLP-encoded node
 fn get_fixed<N>(
     key: [u4; NIBBLE_LENGTH],
-    mut key_offset: Field,
+    mut key_ptr: Field,
     node: [u8; N]) ->
     ([u8; KEY_LENGTH], // Value obtained from node
     Field, // Length of value obtained from node (between 0 and KEY_LENGTH)
@@ -239,17 +241,17 @@ fn get_fixed<N>(
 	    let (nib, niblen) = compact_decode(first_slot, rlp_list.length[0]);
 
         // Length check. Should not go past 64 nibbles.
-	    assert(NIBBLE_LENGTH as u32 - key_offset as u32 >= niblen as u32);
+	    assert(NIBBLE_LENGTH as u32 - key_ptr as u32 >= niblen as u32);
 
         // Check that the `niblen` nibbles in the first slot match up with the `niblen` nibbles
-        // in `key` starting from offset `key_offset`.
+        // in `key` starting from offset `key_ptr`.
 
         // TODO: Fix this problematic code!
         // for i in 0..NIBBLE_LENGTH
         // {
         //     if (i as u32) < (niblen as u32)
         //     {
-        //         assert(nib[key_offset + i] == key[i]);
+        //         assert(nib[key_ptr + i] == key[i]);
         //     }
         // }
 
@@ -257,7 +259,7 @@ fn get_fixed<N>(
         let mut nib_ptr = 0;
         for i in 0..NIBBLE_LENGTH
         {
-            if ((i as u32) >= (key_offset as u32)) & ((i as u32) <= ((key_offset + niblen) as u32))
+            if ((i as u32) >= (key_ptr as u32)) & ((i as u32) <= ((key_ptr + niblen) as u32))
             {
                 assert(nib[nib_ptr] == key[i]);
                 nib_ptr += 1;
@@ -268,7 +270,7 @@ fn get_fixed<N>(
 	    value_length = rlp_list.length[1];
 
         // Increment offset
-        key_offset += niblen;
+        key_ptr += niblen;
 
 	    // Store value
 		for i in 0..KEY_LENGTH
@@ -279,16 +281,16 @@ fn get_fixed<N>(
         // Ensure we've followed the right kind of node, i.e. if we're not at the end of the key,
         // we should have followed an extension node, and if we are, then we should have followed a leaf node.
         let node_type = first_slot[0] >> 4;
-        assert(((key_offset == NIBBLE_LENGTH) & (node_type > 1))
-               | (key_offset != NIBBLE_LENGTH) & (node_type < 2));
+        assert(((key_ptr == NIBBLE_LENGTH) & (node_type > 1))
+               | (key_ptr != NIBBLE_LENGTH) & (node_type < 2));
         
     }
     else
     {
-	    let cur_nibble = key[key_offset * (((key_offset as u32) < (NIBBLE_LENGTH as u32)) as Field)]; // TODO: Avoid this.
+	    let cur_nibble = key[key_ptr * (((key_ptr as u32) < (NIBBLE_LENGTH as u32)) as Field)]; // TODO: Avoid this.
 	    value_length = rlp_list.length[cur_nibble as Field];
 
-	    key_offset += 1;
+	    key_ptr += 1;
 
 	    let nibble_offset = rlp_list.offset[cur_nibble as Field];
 		for j in 0..KEY_LENGTH
@@ -297,7 +299,7 @@ fn get_fixed<N>(
 		}
 	}
     
-    let out = (value, value_length, key_offset);
+    let out = (value, value_length, key_ptr);
 
     out
 }
