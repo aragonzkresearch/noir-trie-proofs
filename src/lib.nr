@@ -35,7 +35,7 @@ fn verify_proof32<N, VALUE_LEN>( // N *must* be a multiple of MAX_NODE_LENGTH!
 
     let key = trie_proof.key;
     
-    let key_nibbles = key_as_nibbles(key);
+    let key_nibbles: [u4; NIBBLE_LENGTH] = key_as_nibbles(key);
     
     let mut key_offset = 0;
 
