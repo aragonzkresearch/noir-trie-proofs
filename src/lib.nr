@@ -17,18 +17,18 @@ global MAX_NUM_FIELDS: Field = 17;
 // Type for account and storage proofs corresponding to `ethers-rs` StorageProof type
 // Both involve 32-byte keys
 // TODO: Add max_node_length to trie proof struct as comptime Field parameter to allow arbitrary fixed-length keys. Requires ability to declare arrays of length determined by comptime Field variable.
-struct TrieProof32<N>
+struct TrieProof32<N, VALUE_LEN>
 {
     key: [u8; KEY_LENGTH], // Key to look up along proof path
     proof: [u8; N], // RLP encoded proof path; assumed to be obtained by right-padding each node (e.g. with zeros) to form a list of length MAX_NODE_LENGTH and concatenated in order.
     depth: Field, // Depth of proof. Necessary for technical reasons
-    value: [u8; KEY_LENGTH]
+    value: [u8; VALUE_LEN]
 }
 
 // Ethereum trie proof verifier for 32-byte long keys
-fn verify_proof32<N>( // N *must* be a multiple of MAX_NODE_LENGTH!
+fn verify_proof32<N, VALUE_LEN>( // N *must* be a multiple of MAX_NODE_LENGTH!
     root_hash: [u8; KEY_LENGTH], // Hash of root, i.e. first, node.
-    trie_proof: TrieProof32<N> // Trie proof struct
+    trie_proof: TrieProof32<N, VALUE_LEN> // Trie proof struct
 ) -> bool
 {
     assert((N as u32) % (MAX_NODE_LENGTH as u32) == 0); // Check that N is a multiple of MAX_NODE_LENGTH
@@ -73,7 +73,6 @@ fn verify_proof32<N>( // N *must* be a multiple of MAX_NODE_LENGTH!
 	    }
     }
     
-
     assert(key_offset == 2*key.len()); // All of the key has been exhausted.
 
     // Need to encode value
