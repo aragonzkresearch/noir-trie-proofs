@@ -1,11 +1,14 @@
-// RLP decoding
-global MAX_LEN_IN_BYTES: comptime Field = 2; // Max number of bytes required to represent length of a string or list
-global MAX_DATA_BYTES: comptime Field = 32;
-global MAX_FIELDS: comptime Field = 17;
+// RLP decoding library
 
-// Enum
-global IS_STRING: comptime Field = 0;
-global IS_LIST: comptime Field = 1;
+// Constants expressing maximum data sizes
+// TODO: Convert these to function parameters
+global MAX_LEN_IN_BYTES: Field = 2; // Max number of bytes required to represent length of a string or list
+global MAX_DATA_BYTES: Field = 32;
+global MAX_FIELDS: Field = 17;
+
+// RLP data type enum
+global IS_STRING: Field = 0;
+global IS_LIST: Field = 1;
 
 // RLP header struct obtained from length decoding
 struct RLP_Header
@@ -31,7 +34,7 @@ struct RLP_List<NUM_FIELDS>
 {
     offset: [Field; NUM_FIELDS],
     length: [Field; NUM_FIELDS],
-    typ: [Field; NUM_FIELDS],
+    data_type: [Field; NUM_FIELDS],
     // Number of fields
     num_fields: Field
 }
@@ -39,12 +42,13 @@ struct RLP_List<NUM_FIELDS>
 impl<NUM_FIELDS> RLP_List<NUM_FIELDS>
 {
     // RLP list constructor
-    fn new(offset: [Field; NUM_FIELDS], length: [Field; NUM_FIELDS], typ: [Field; NUM_FIELDS], num_fields: Field) -> Self
+    fn new(offset: [Field; NUM_FIELDS], length: [Field; NUM_FIELDS], data_type: [Field; NUM_FIELDS], num_fields: Field) -> Self
     {
-	    RLP_List {offset, length, typ, num_fields}
+	    RLP_List {offset, length, data_type, num_fields}
     }
 }
 
+// Extract length from bytes following prefix in case data is of length >= 56 bytes
 fn data_len<N>(arr: [u8; N], lenlen: Field) -> Field
 {
     let mut out = 0;
@@ -59,7 +63,9 @@ fn data_len<N>(arr: [u8; N], lenlen: Field) -> Field
     out
 }
 
-fn decode_len<N>(arr: [u8; N]) -> RLP_Header // Determine offset, length and type of RLP-encoded data
+// Determine offset, length and type of RLP-encoded data
+// May be used on any RLP-encoded byte array
+fn decode_len<N>(arr: [u8; N]) -> RLP_Header
 {
     let prefix = arr[0];
 
@@ -91,9 +97,9 @@ fn decode_len<N>(arr: [u8; N]) -> RLP_Header // Determine offset, length and typ
 						                              data_len(arr, (prefix - 0xf7) as Field)))));
     
     
-    let data_typ = (prefix >= 0xc0) as Field;
+    let data_type = (prefix >= 0xc0) as Field;
 
-    RLP_Header::new(offset, len, data_typ)
+    RLP_Header::new(offset, len, data_type)
 }
 
 // RLP list decoder
@@ -105,55 +111,91 @@ fn decode1<N, NUM_FIELDS>(input: [u8; N])
     let mut num_fields: Field = 0; // Number of fields
     let mut dec_off = [0; NUM_FIELDS]; // Decoded offsets
     let mut dec_len = [0; NUM_FIELDS]; // Decoded lengths
-    let mut dec_typ = [0; NUM_FIELDS]; // Decoded types
+    let mut dec_type = [0; NUM_FIELDS]; // Decoded types
 
-    let RLP_Header {offset, length: payload_len, data_type: input_typ} = decode_len(input);
-    let total_len = payload_len + offset;
+    let mut RLP_Header {offset, length: payload_len, data_type: input_type} = decode_len(input); // Read RLP header of input
+    
+    let total_len = payload_len + offset; // Data length including RLP header
 
-    assert(input_typ == IS_LIST); // Should be dealing with a list
+    assert(input_type == IS_LIST); // Should be dealing with a list
+    
     assert((total_len as u64) <= (input.len() as u64)); // Payload should be fully contained in input array
 
-    let mut cur_field_ptr = 0; // Field byte cursor
-    let mut cur_field_total_len = 0; // Length of current field (including header)
-
-    for i in 0..input.len()
+    // Process each element of the list
+    for i in 0..NUM_FIELDS
     {
-	    let range_p = ((offset as u64) <= (i as u64)) & ((i as u64) < (total_len as u64)); // Index range predicate
-	    let header_read_p = range_p & (cur_field_total_len == 0); // 'Header read' predicate
+        let loop_p = (offset != total_len) as Field; // Loop predicate: Take action only if there is data left to parse.
+        
+        let header: [u8; MAX_LEN_IN_BYTES + 1] = take_dot_drop(input, offset); // Read element header
+	    let RLP_Header {offset: field_off, length: field_len, data_type: field_type} = decode_len(header); // Decode length of element
+        let total_field_len = field_off + field_len; // Length of element + header
 
-	    // If header needs to be read, we need to decode its length
-	    let header: [u8; MAX_LEN_IN_BYTES + 1] = take_with_offset(input, i);
-	    let RLP_Header {offset: field_off, length: field_len, data_type: field_typ} = decode_len(header);
+        // Assign decoded data and set them to 0 if loop predicate false (Convenient for testing; could remove this later)
+        dec_off[i] = loop_p*(offset + (1-field_type)*field_off); // If the ith slot contains a list, include its RLP header.
+	    dec_len[i] = loop_p*(field_len + field_type*field_off); // If the ith slot contains a list, make sure to include the length of its header in the decoded data.
+        dec_type[i] = loop_p*(field_type);
 
-	    // If in 'header read' mode, take note of total length of payload (i.e. including offset).
-	    cur_field_total_len = (header_read_p as Field)*(field_len + field_off) + (1 - header_read_p as Field)* cur_field_total_len;
-	    
-	    // Place these in output arrays if necessary.
-	    for j in 0..NUM_FIELDS
-	    {
-	        let index_p = (range_p & header_read_p & (j == num_fields)) as Field;
-	        
-	        dec_off[j] = index_p * (i + field_off) + (1-index_p) * dec_off[j];
-	        dec_len[j] = index_p * field_len + (1-index_p)* dec_len[j];
-	        dec_typ[j] = index_p * field_typ + (1-index_p)*dec_typ[j];
-	    }
-	    
-	    // Increment ptr if wihin range and not in 'header read' mode
-	    cur_field_ptr += (range_p as Field)*(1 - header_read_p as Field);
-
-	    // If we are done with a field (i.e. cur_field_ptr == cur_field_total_len),
-	    let field_end_p = range_p & (cur_field_ptr == cur_field_total_len - 1);
-	    // reset field ptr and increment field number.
-	    // Only do this if we are within range!
-	    cur_field_ptr = (1 - field_end_p as Field) * cur_field_ptr;
-	    cur_field_total_len = (1 - field_end_p as Field)*cur_field_total_len;
-	    num_fields += field_end_p as Field;
-
-	    // Ensure number of fields is not too big
-	    assert((num_fields as u64) <= (NUM_FIELDS as u64));
+        // Calculate new offset
+        offset += loop_p*total_field_len;
+        num_fields += loop_p;
     }
 
-    RLP_List::new(dec_off, dec_len, dec_typ, num_fields)
+    // Ensure that we have exhausted the data
+    assert(total_len == offset);
+
+    RLP_List::new(dec_off, dec_len, dec_type, num_fields)
+}
+
+// Special purpose RLP list decoder for lists of strings of length < 56 bytes
+fn decode1_small<N, NUM_FIELDS>(input: [u8; N])
+			              -> RLP_List<NUM_FIELDS>
+{
+    let mut num_fields: Field = 0; // Number of fields
+    let mut dec_off = [0; NUM_FIELDS]; // Decoded offsets
+    let mut dec_len = [0; NUM_FIELDS]; // Decoded lengths
+    let mut dec_type = [0; NUM_FIELDS]; // Decoded types
+
+    let mut RLP_Header {offset, length: payload_len, data_type: input_type} = decode_len(input);
+    let total_len = payload_len + offset;
+
+    assert(input_type == IS_LIST); // Should be dealing with a list
+    assert((total_len as u64) <= (input.len() as u64)); // Payload should be fully contained in input array
+
+    // Fill up the NUM_FIELDS fields
+    for i in 0..NUM_FIELDS
+    {
+        let loop_p = (offset != total_len) as Field; // Loop predicate: Take action only if there is data left to parse.
+        
+        let header = input[offset]; // Read field header
+
+        assert(header < 0xb8); // Header must represent a string of length < 56 bytes.
+
+        let field_type = IS_STRING; // Always dealing with strings here
+
+        let single_byte_p = (header < 0x80) as Field; // 1 if `header` represents a single byte.
+
+        let field_off = 1 - single_byte_p; // If `header` < 0x80, then we are dealing with a single byte whose value
+        // is given by header. Else, the string begins at the following index.
+
+        let field_len = single_byte_p*1 + (1-single_byte_p)*((header - 0x80) as Field); // Single byte means len = 1,
+        // else subtract 0x80 from the header to determine len.
+
+        let total_field_len = field_off + field_len; // Length of field + header
+
+        // Assign decoded data and set them to 0 if loop predicate false (Convenient for testing; could remove this later)
+        dec_off[i] = loop_p*(offset + field_off);
+	    dec_len[i] = loop_p*(field_len);
+        dec_type[i] = loop_p*(field_type);
+
+        // Calculate new offset
+        offset += loop_p*total_field_len;
+        num_fields += loop_p;
+    }
+
+    // Ensure that we have exhausted the data
+    assert(total_len == offset);
+
+    RLP_List::new(dec_off, dec_len, dec_type, num_fields)
 }
 
 #[test]
@@ -180,7 +222,7 @@ fn rlp_decode_test()
     assert(output1.num_fields == 17);
     assert(output1.offset == [4, 37, 70, 103, 136, 169, 202, 235, 268, 301, 334, 367, 400, 433, 466, 499, 532]);
     assert(output1.length == [32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 0]);
-    assert(output1.typ == [0; MAX_FIELDS]);
+    assert(output1.data_type == [0; MAX_FIELDS]);
 }
 
 
@@ -194,7 +236,7 @@ fn data_len_test()
 fn rlp_length_check()
 {
     // List test case
-    let in0: [u8; MAX_LEN_IN_BYTES + 1] = take_with_offset([ 0xc7, 0xc0, 0xc1, 0xc0, 0xc3, 0xc0, 0xc1, 0xc0 ], 0);
+    let in0: [u8; MAX_LEN_IN_BYTES + 1] = take_dot_drop([ 0xc7, 0xc0, 0xc1, 0xc0, 0xc3, 0xc0, 0xc1, 0xc0 ], 0);
     let x = decode_len(in0);
     assert(x.offset == 1);
     assert(x.length == 7);
@@ -213,13 +255,13 @@ fn rlp_length_check()
     assert(z.data_type == IS_STRING);
 }
 
-fn take_with_offset<T, N, M>(arr: [T; N], offset: comptime Field) -> [T; M] // Take M elements from arr starting at offset
+fn take_dot_drop<T, N, M>(arr: [T; N], n: Field) -> [T; M] // = drop n . take M
 {
     let mut out = [arr[0]; M];
 
     for i in 0..M
     {
-	    let j = (((i + offset) as u64) < N) as Field * (i + offset); // Restrict to proper range and fill with arr[0] otherwise.
+	    let j = (((i + n) as u64) < N) as Field * (i + n); // Restrict to proper range and fill with arr[0] otherwise.
 	    out[i] = arr[j];
     }
 

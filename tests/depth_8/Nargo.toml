@@ -3,4 +3,4 @@ authors = [""]
 compiler_version = "0.4.1"
 
 [dependencies]
-trie = { path = "../.." }
+trie = {path = "../.."}
