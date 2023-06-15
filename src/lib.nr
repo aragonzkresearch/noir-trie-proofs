@@ -53,7 +53,7 @@ fn verify_proof32<N>( // N *must* be a multiple of MAX_NODE_LENGTH!
 
     for i in 0..path.len()/MAX_NODE_LENGTH
     {
-	    if i as u8 < depth as u8
+	    if (i as u8) < (depth as u8)
 	    {
 	        for j in 0..MAX_NODE_LENGTH
 	        {
