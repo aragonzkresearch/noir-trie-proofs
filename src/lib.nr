@@ -3,12 +3,16 @@ use dep::std::hash::keccak256;
 
 mod rlp; // Module for required RLP encoding/decoding
 
+// 2-node enum
+global EXTENSION: Field = 0;
+global LEAF: Field = 1;
+
 // Constants for 32-byte long keys; TODO: Omit these when it is possible to replace constants with numeric generics.
-global KEY_LENGTH: comptime Field = 32; // key length in bytes; <= 55 for simplicity
-global NIBBLE_LENGTH: comptime Field = 64; // = 2*KEY_LENGTH
+global KEY_LENGTH: Field = 32; // key length in bytes; <= 55 for simplicity
+global NIBBLE_LENGTH: Field = 64; // = 2*KEY_LENGTH
 
 // For tries with 32-byte long keys, we we can bound the byte length of any node from above by the following constant:
-global MAX_NODE_LENGTH: comptime Field = 532; // = MAX_RLP_LIST_HEADER_LENGTH (= 1 + MAX_LENGTH_BYTES)
+global MAX_NODE_LENGTH: Field = 532; // = MAX_RLP_LIST_HEADER_LENGTH (= 1 + MAX_LENGTH_BYTES)
 //   + 16*MAX_RLP_ELEMENT_LENGTH (= 16*(1 + KEY_LENGTH))
 // + LENGTH_OF_NULL_ELEMENT (= 1)
 
@@ -16,7 +20,7 @@ global MAX_NUM_FIELDS: Field = 17;
 
 // Type for account and storage proofs corresponding to `ethers-rs` StorageProof type
 // Both involve 32-byte keys
-// TODO: Add max_node_length to trie proof struct as comptime Field parameter to allow arbitrary fixed-length keys. Requires ability to declare arrays of length determined by comptime Field variable.
+// TODO: Add max_node_length to trie proof struct as comptime Field parameter to allow arbitrary fixed-length keys. Requires ability to declare arrays of length expressed as a comptime Field variable.
 struct TrieProof32<N, VALUE_LEN>
 {
     key: [u8; KEY_LENGTH], // Key to look up along proof path
@@ -37,7 +41,7 @@ fn verify_proof32<N, VALUE_LEN>( // N *must* be a multiple of MAX_NODE_LENGTH!
     
     let key_nibbles: [u4; NIBBLE_LENGTH] = key_as_nibbles(key);
     
-    let mut key_offset = 0;
+    let mut key_ptr = 0;
 
     let (value, mut value_length) = byte_value(trie_proof.value); // Value to verify together with its byte length
 
@@ -45,93 +49,83 @@ fn verify_proof32<N, VALUE_LEN>( // N *must* be a multiple of MAX_NODE_LENGTH!
 
     let depth = trie_proof.depth; // Depth of proof path
 
-    let mut cur_value = root_hash;
+    let mut extracted_hash = root_hash;
 
-    let mut cur_value_length = 32;
-    
-    let mut cur_node = [0; MAX_NODE_LENGTH];
+    let mut node = [0; MAX_NODE_LENGTH];
 
-    for i in 0..path.len()/MAX_NODE_LENGTH
+    for i in 0..(path.len()/MAX_NODE_LENGTH - 1)
     {
-	    if (i as u8) < (depth as u8)
+        let range_p = (i as u8) < (depth - 1) as u8; // Range predicate
+        
+        let k = if (range_p) {i} else {0}; // Restrict index to range {0, ..., depth - 2}
+
+        // Populate node array
+	    for j in 0..MAX_NODE_LENGTH
 	    {
-	        for j in 0..MAX_NODE_LENGTH
-	        {
-		        cur_node[j] = path[j + i*MAX_NODE_LENGTH];
-	        }
-
-	        // First compute current node hash
-	        let node_length = { let rlp_header = rlp::decode_len(cur_node); rlp_header.offset + rlp_header.length } as u32; // Determine length of node
-	        let cur_hash = keccak256(cur_node, node_length); // Compute keccak256 hash
-	        assert(cur_hash == cur_value); // Make sure hashes are consistent
-            assert(cur_value_length == 32); // Value length should be 32, since all values extracted are hashes except possibly for the final one.
- 	        let lookup = get_fixed32(key_nibbles, key_offset, cur_node); // Follow node
- 	        cur_value = lookup.0;
-	        cur_value_length = lookup.1;
- 	        key_offset = lookup.2;
-
+		    node[j] = path[j + k*MAX_NODE_LENGTH];
 	    }
+
+        assert(!range_p | verify_node_hash(node, extracted_hash)); // If within range, node hash should match the hash extracted from the preceding node.
+        
+ 	    let lookup: ([u8; 32], Field) = resolve_nibble32(key_nibbles, key_ptr, node); // Resolve next nibble(s)
+
+        // Extract hash and advance key pointer if within range
+        if range_p
+        {
+            extracted_hash = lookup.0;
+            key_ptr = lookup.1;
+        }
     }
     
-    assert(key_offset == 2*key.len()); // All of the key has been exhausted.
+    // Treat final node as the preceding nodes...
+    for j in 0..MAX_NODE_LENGTH
+	{
+		node[j] = path[j + (depth - 1)*MAX_NODE_LENGTH];
+	}
 
-    // Need to encode value
+    assert(verify_node_hash(node, extracted_hash));
 
-    let (enc_value, enc_value_length) = encode_value32(value, value_length);
+    let rlp_list: rlp::RLP_List<MAX_NUM_FIELDS> = rlp::decode1_small_lis(node);
+ 	let lookup: ([u8; VALUE_LEN], Field, Field) = resolve2(LEAF, node, rlp_list, key_nibbles, key_ptr);
 
-    assert(cur_value_length == enc_value_length); // Value length equality
+    // ...except extract a value rather than a key.
+ 	let extracted_value = lookup.0;
+	let extracted_value_length = lookup.1;
+    assert((extracted_value_length as u32) <= (VALUE_LEN as u32)); // Extracted value should fit in a byte array of length VALUE_LEN.
+ 	key_ptr = lookup.2;
 
-    for i in 0..KEY_LENGTH
+    
+    assert(key_ptr == 2*key.len()); // All of the key has been exhausted.
+
+    // Decode extracted value
+    let (dec_value_offset, dec_value_len) = rlp::decode0(extracted_value);
+    assert(dec_value_len == value_length);
+
+    for i in 0..VALUE_LEN
     {
-	    if (i as u8) < (value_length as u8)
-	    {
-	        assert(cur_value[i] == enc_value[i]); // Value equality
-	    }
+        if (i as u32) < (value_length as u32)
+        {
+            assert(extracted_value[dec_value_offset + i] == value[i]);
+        }
     }
     
     true
 }
 
-// Encode value according to 'node cap function', which ensures values are <= 32 bytes long
-// in a trie (see Appendix D of Ethereum Yellow Paper).
-fn encode_value32<N>(value: [u8; N], value_length: Field) -> ([u8; KEY_LENGTH], Field)
+// Verify Keccak hash of node
+fn verify_node_hash<N>(node: [u8; N], hash: [u8; 32])
+                       -> bool
 {
-    assert(value.len() as u32 >= value_length as u32);
+    // Extract actual length of node
+    let node_length = { let rlp_header = rlp::decode_len(node); rlp_header.offset + rlp_header.length } as u32; // Determine length of node
 
-    let mut out_value = [0; KEY_LENGTH];
-    
-    if value_length == 0 // Check for empty string
-    {
-    	let out = (out_value, value_length);
-	    out
-    }
-    else if (value_length == 1) & value[0] < 0x7f // Check if string is a small enough lone byte
-    {
-        out_value[0] = value[0];
-        let out = (out_value, value_length);
+    // Compute Keccak256 hash of node
+	let node_hash = keccak256(node, node_length);
 
-        out
-    }
-    else if value_length as u32 < 31 // Check for sufficiently short string
-    {
-	    out_value[0] = 0x80 + value_length as u8;
-	    
- 	    for i in 1..value.len()
- 	    {
- 	        out_value[i] = value[i-1];
- 	    }
-	    
-	    let out = (out_value, value_length + 1);
-
-	    out
-    }
-    else // String too long, so hash it.
-    {
-	    // Run Keccak256 on [value[0], ... , value[value_length - 1]]
-	    let out = (out_value, 32);
-	    out
-    }
+    // Compare hashes
+	node_hash == hash
 }
+
 
 // Key-to-nibble conversion
 fn key_as_nibbles<KEY_LEN, NIB_LEN>(key: [u8; KEY_LEN]) -> [u4; NIB_LEN]
@@ -150,7 +144,6 @@ fn key_as_nibbles<KEY_LEN, NIB_LEN>(key: [u8; KEY_LEN]) -> [u4; NIB_LEN]
 }
 
 // Decode leaf/extension node's first slot into nibbles
-// Assume this slot is a 33-byte right-padded array
 // Returns nibbles in a right-padded array together with the number of nibbles.
 fn compact_decode<MAX_ENC_LEN, NIB_LEN>(input: [u8; MAX_ENC_LEN], length: Field) -> ([u4; NIB_LEN], Field)
 {
@@ -186,138 +179,155 @@ fn compact_decode<MAX_ENC_LEN, NIB_LEN>(input: [u8; MAX_ENC_LEN], length: Field)
 	out_length = 2*length + (parity as Field) - 2;
 
 
-    assert((out_length as u32) <= (NIB_LEN as u32)); // TODO: Sanity check
+    assert((out_length as u32) <= (NIB_LEN as u32)); // Sanity check
     let out = (nibble, out_length);
     out
 }
 
-// Check whether RLP-decoded list represents a valid trie node
-fn valid_node_shape_p<M,N>(
-    fixed_key_length_p: comptime bool, // Predicate indicating whether key length is fixed or variable
-    rlp_list: rlp::RLP_List<N>
-) -> bool
-{
-    let num_fields = rlp_list.num_fields;
-    let slot_len = rlp_list.length;
-    
-    // First check the number of fields
-    if num_fields == 2
-    {
-        // The first slot's length should be <= 1 (compact encoding header) + 32
-        assert((slot_len[0] as u32) <= ((KEY_LENGTH + 1) as u32));
-        
-        // The second slot's length should be <= 32
-        assert((slot_len[1] as u32) <= (KEY_LENGTH as u32));
-
-        true
-    }
-    else if num_fields == 17
-    {
-        // The first 16 slots should be of length 32 or 0.
-        for i in 0..16
-        {
-            assert(slot_len[i]*(slot_len[i] - KEY_LENGTH) == 0);
-        }
-
-        // If we are dealing with a fixed key length, the last slot should be of length 0.
-        // Else it should be of length <= 32
-        assert((fixed_key_length_p & (slot_len[16] == 0))
-               | (!fixed_key_length_p & ((slot_len[16] as u32) <= (KEY_LENGTH as u32))));
-
-        true
-    }
-    else
-    {
-        false
-    }
-}
-
-// Look up nibble (or sequence of nibbles) in RLP-encoded node
-fn get_fixed32<N>(
+// Resolve nibble (or sequence of nibbles) in RLP-encoded node
+// Assumes 32-byte key length
+fn resolve_nibble32<N>(
     key: [u4; NIBBLE_LENGTH],
     mut key_ptr: Field,
     node: [u8; N]) ->
-    ([u8; KEY_LENGTH], // Value obtained from node
-    Field, // Length of value obtained from node (between 0 and KEY_LENGTH)
-    Field) // New key offset
+    ([u8; 32], // Extracted key
+    Field) // New key pointer
 {
     let rlp_list: rlp::RLP_List<MAX_NUM_FIELDS> = rlp::decode1(node);
     let num_fields = rlp_list.num_fields;
 
-    // Make sure node has the right shape, i.e. that it has the right number
-    // of slots and that its slots have the right lengths.
-    assert(valid_node_shape_p(true, rlp_list));
+    let mut resolved_key = [0; 32];
+    let mut resolved_key_length = 0;
     
-    let mut value = [0; KEY_LENGTH];
-    let mut value_length = 0;
-
     if num_fields == 2 // If we are dealing with a leaf/extension node
     {
-        let first_slot: [u8; KEY_LENGTH + 1] = rlp::take_dot_drop(node,rlp_list.offset[0]); // TODO: Replace consts with numeric generics when it is possible to use them in array-length expressions
-	    let (nib, niblen): ([u4; NIBBLE_LENGTH], Field) = compact_decode(first_slot, rlp_list.length[0]);
-
-        // Length check. Should not go past 64 nibbles.
-	    assert(((NIBBLE_LENGTH - key_ptr) as u32) >= niblen as u32);
-
-        // Check that the `niblen` nibbles in the first slot match up with the `niblen` nibbles
-        // in `key` starting from offset `key_ptr`.
-
-        // TODO: Fix this problematic code!
-        // for i in 0..NIBBLE_LENGTH
-        // {
-        //     if (i as u32) < (niblen as u32)
-        //     {
-        //         assert(nib[key_ptr + i] == key[i]);
-        //     }
-        // }
-
-        // Slightly more complicated working code
-        let mut nib_ptr = 0;
-        for i in 0..NIBBLE_LENGTH
-        {
-            if ((i as u32) >= (key_ptr as u32)) & ((i as u32) <= ((key_ptr + niblen) as u32))
-            {
-                assert(nib[nib_ptr] == key[i]);
-                nib_ptr += 1;
-            }
-        }
-
-        // Store length of value obtained
-	    value_length = rlp_list.length[1];
-
-        // Increment offset
-        key_ptr += niblen;
-
-	    // Store value
-		for i in 0..KEY_LENGTH
-		{
-		    value[i] = node[rlp_list.offset[1] + i];
-		}
-
-        // Ensure we've followed the right kind of node, i.e. if we're not at the end of the key,
-        // we should have followed an extension node, and if we are, then we should have followed a leaf node.
-        let node_type = first_slot[0] >> 4;
-        assert(((key_ptr == NIBBLE_LENGTH) & (node_type > 1 as u8))
-               | (key_ptr != NIBBLE_LENGTH) & (node_type < 2 as u8));
-        
+        // Resolve 2-node
+        let node_resolution: ([u8; 32], Field, Field) = resolve2(EXTENSION, node, rlp_list, key, key_ptr);
+        // Deconstruct
+        key_ptr = node_resolution.2;
+        resolved_key = node_resolution.0;
+        resolved_key_length = node_resolution.1;        
     }
     else
     {
-	    let cur_nibble = key[key_ptr * (((key_ptr as u32) < (NIBBLE_LENGTH as u32)) as Field)]; // TODO: Avoid this.
-	    value_length = rlp_list.length[cur_nibble as Field];
+        // Since we are dealing with a fixed key length, the last slot must be empty.
+        assert(rlp_list.length[16] == 0);
 
-	    key_ptr += 1;
+        // Resolve 17-node
+        let node_resolution = resolve17(node, rlp_list, key, key_ptr);
 
-	    let nibble_offset = rlp_list.offset[cur_nibble as Field];
-		for j in 0..KEY_LENGTH
-		{
-		    value[j] = node[nibble_offset + j];
-		}
+        key_ptr = node_resolution.2;
+        resolved_key = node_resolution.0;
+        resolved_key_length = node_resolution.1;
 	}
+
+    assert(resolved_key_length == 32);
     
-    let out = (value, value_length, key_ptr);
+    (resolved_key, key_ptr)
+}
+
+// Resolve a 17-node, i.e. a BRANCH.
+fn resolve17<N>(
+    node: [u8; N],
+    rlp_list: rlp::RLP_List<MAX_NUM_FIELDS>,
+    key: [u4; NIBBLE_LENGTH],
+    mut key_ptr: Field)
+                      -> (
+    [u8; KEY_LENGTH], // Extracted key
+    Field, // Extracted key length
+    Field) // New key pointer
+{
+    // We should be dealing with a node containing 17 elements
+    assert(rlp_list.num_fields == 17);
+    
+    // The first 16 slots should be of length 32 or 0.
+    for i in 0..16
+    {
+        assert(rlp_list.length[i]*(rlp_list.length[i] - KEY_LENGTH) == 0);
+    }
+
+    
+    let cur_nibble = key[key_ptr];
+	let resolved_key_length = rlp_list.length[cur_nibble as Field];
+
+    assert(resolved_key_length == KEY_LENGTH);
+    assert((key_ptr as u32) < (NIBBLE_LENGTH as u32)); // Fixed-length key => Node cannot be terminal.
+    
+    key_ptr += 1;
+
+	let nibble_offset = rlp_list.offset[cur_nibble as Field];
+
+    let mut resolved_key = [0; KEY_LENGTH];
+    
+    for j in 0..KEY_LENGTH
+	{
+		resolved_key[j] = node[nibble_offset + j];
+	}
+
+
+    let out = (resolved_key, resolved_key_length, key_ptr);
 
     out
+}
+
+// Resolve a 2-node, i.e. a LEAF or EXTENSION.
+fn resolve2<N, VALUE_LEN>(
+    node_type: comptime Field,
+    node: [u8; N],
+    rlp_list: rlp::RLP_List<MAX_NUM_FIELDS>,
+    key: [u4; NIBBLE_LENGTH],
+    mut key_ptr: Field)
+                      -> (
+    [u8; VALUE_LEN], // Value
+    Field, // Value length
+    Field) // New key offset
+{
+    // We should be dealing with a node containing two elements
+    assert(rlp_list.num_fields == 2);
+    
+    let mut value = [0; VALUE_LEN];
+    
+    let first_slot: [u8; 1 + NIBBLE_LENGTH/2] = rlp::take_dot_drop(node,rlp_list.offset[0]); // TODO: Replace consts with numeric generics when it is possible to use them in array length expressions
+    
+	let (nib, niblen): ([u4; NIBBLE_LENGTH], Field) = compact_decode(first_slot, rlp_list.length[0]);
+
+    // Length checks.
+    // Should not go past 64 nibbles.
+	assert(((NIBBLE_LENGTH - key_ptr) as u32) >= niblen as u32);
+
+    // Check that the `niblen` nibbles in the first slot match up with the `niblen` nibbles
+    // in `key` starting from offset `key_ptr`.
+    for i in 0..NIBBLE_LENGTH
+    {
+        if (i as u32) < (niblen as u32)
+        {
+            assert(nib[i] == key[key_ptr + i]);
+        }
+    }
+
+    // Store length of value obtained
+	let value_length = rlp_list.length[1];
+    // This should not exceed VALUE_LEN
+    assert((value_length as u32) <= (VALUE_LEN as u32));
+   
+
+    // Increment offset
+    key_ptr += niblen;
+
+	// Store value
+    assert(((rlp_list.offset[1] + VALUE_LEN) as u32) <= (N as u32)); // VALUE_LEN should be consistent with maximum node length
+	for i in 0..VALUE_LEN
+	{
+		value[i] = node[rlp_list.offset[1] + i];
+	}
+
+    // Ensure we've followed the right kind of node, i.e. if we're not at the end of the key,
+    // we should have followed an extension node, and if we are, then we should have followed a leaf node.
+    let node_type_nibble = (first_slot[0] >> 4);
+
+    assert(if node_type == LEAF { (node_type_nibble as u4) > 1 } else { (node_type == EXTENSION) & ((node_type_nibble as u4) <= 1) }); // Must have resolved a leaf or extension node.
+    
+    (value, value_length, key_ptr)
 }
 
 // Function taking a left-padded byte array representing an integer and returning a right-padded one
@@ -366,7 +376,26 @@ fn byte_value_test()
     assert((test2.0 == [11,12,13,14,15,16,17,18,19,20,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]) & (test2.1 == 22));
 }
 
-// Trie proof test
+// Trie proof tests
+// #[test]
+// fn cryptopunk1_state()
+// {
+//     // Obtain state root using
+//     // curl -X POST https://rpc.ankr.com/eth -d '{"jsonrpc":"2.0","method":"eth_getBlockByNumber","params":["0x10ae999", false],"id":1}'
+//     // > 0xd78d4f182ebd7f0dc86c5b328b73f9ea3dfe17ee56fbb490d9b67edac48e2b04
+//     let state_root = [0xd7,0x8d,0x4f,0x18,0x2e,0xbd,0x7f,0x0d,0xc8,0x6c,0x5b,0x32,0x8b,0x73,0xf9,0xea,0x3d,0xfe,0x17,0xee,0x56,0xfb,0xb4,0x90,0xd9,0xb6,0x7e,0xda,0xc4,0x8e,0x2b,0x04];
+//     // Fetch account proof using
+//     // curl -X POST https://rpc.ankr.com/eth -d '{"jsonrpc":"2.0","method":"eth_getProof","params":["0xb47e3cd837dDF8e4c57f05d70ab865de6e193bbb",["0xbbc70db1b6c7afd11e79c0fb0051300458f1a3acb8ee9789d9b6b26c61ad9bc7"],"0x10AE999"],"id":1}'
+//     let path = [249,2,17,160,39,184,232,145,87,100,155,158,44,75,173,7,62,162,66,101,126,172,66,220,180,65,154,222,48,124,58,140,100,114,122,220,160,177,10,64,5,150,176,129,93,70,117,110,147,128,136,70,139,63,18,108,69,179,241,34,156,81,214,56,70,151,222,138,133,160,145,169,164,91,80,127,199,50,252,79,34,91,122,253,52,219,115,220,45,249,83,247,54,236,21,220,15,15,0,15,150,43,160,120,242,32,235,222,183,165,195,189,228,191,198,3,176,255,34,198,130,102,73,61,146,243,224,60,200,26,243,137,112,28,248,160,254,4,18,196,21,98,168,26,51,141,37,213,204,203,122,161,118,181,90,215,99,115,118,251,235,89,99,165,93,121,111,98,160,176,96,125,55,134,100,173,104,175,114,7,123,145,199,141,239,35,233,18,204,231,157,94,173,139,215,128,229,51,124,196,235,160,189,101,236,175,15,25,135,78,45,234,230,232,255,78,26,113,116,68,12,65,158,215,208,61,61,191,111,56,124,28,87,138,160,38,133,98,27,139,112,93,17,219,48,73,63,96,230,185,154,62,10,230,208,28,99,131,136,163,16,69,249,53,34,86,5,160,68,31,89,116,174,36,20,137,22,219,136,211,242,56,232,9,119,131,192,72,1,45,126,83,13,223,144,209,88,167,211,152,160,224,16,70,254,186,170,49,108,51,101,225,170,27,249,52,154,56,156,151,110,201,52,126,101,75,22,80,42,98,245,235,160,160,212,96,62,222,218,155,203,193,229,219,188,255,153,50,139,149,121,112,36,11,114,136,64,87,34,97,201,162,33,46,60,6,160,18,218,200,209,141,247,43,9,107,183,126,241,169,217,63,45,58,47,137,136,110,198,212,150,0,101,30,28,151,240,190,98,160,90,230,129,10,111,75,179,105,71,31,33,131,76,208,72,190,139,224,15,203,201,243,179,96,161,32,110,11,26,163,130,90,160,89,40,60,141,85,209,105,179,154,154,92,145,138,9,208,152,147,177,153,179,132,115,241,70,213,166,19,97,199,123,137,233,160,27,52,165,177,14,176,204,98,45,113,54,163,97,4,86,146,182,252,152,117,202,255,229,138,158,248,66,218,53,96,28,132,160,210,77,103,149,114,142,244,213,2,188,201,33,33,224,36,1,89,80,72,125,235,202,103,192,141,106,244,162,109,8,47,211,128,249,2,17,160,11,144,160,221,191,57,5,54,99,92,165,144,35,197,157,76,249,87,135,128,172,228,190,109,221,182,179,184,151,130,109,64,160,103,245,80,57,39,50,26,169,186,242,232,95,11,49,9,1,66,107,129,42,205,104,33,125,60,228,56,176,233,227,180,169,160,135,55,148,110,61,249,166,125,204,82,120,40,90,61,128,112,24,22,37,63,121,84,245,70,30,162,22,17,153,87,0,156,160,212,58,152,166,211,21,2,161,77,228,149,101,12,98,236,69,23,37,232,111,177,255,130,26,40,158,108,119,33,28,122,36,160,114,102,50,195,112,215,81,24,168,111,126,210,4,226,123,132,101,55,203,132,230,139,84,130,203,207,34,120,116,40,153,240,160,92,237,147,93,184,132,250,89,67,178,235,33,64,165,131,102,232,28,83,231,50,136,51,139,163,109,172,209,67,53,22,153,160,123,56,119,3,137,240,114,56,21,40,64,47,149,128,41,237,245,252,68,113,226,68,71,82,120,28,128,172,219,163,38,20,160,103,55,91,249,11,255,55,49,198,7,74,50,119,118,213,182,166,59,184,86,78,94,228,97,100,146,114,175,218,148,216,54,160,43,162,45,178,60,83,164,107,39,53,77,104,210,111,165,157,224,179,103,249,147,157,108,232,110,169,113,193,223,21,0,193,160,246,193,145,32,89,162,56,93,28,211,149,110,90,142,83,191,83,236,65,105,210,148,215,12,53,56,66,72,40,149,203,13,160,97,3,120,71,105,122,200,68,218,214,212,3,255,0,231,194,226,230,129,235,160,101,38,19,192,176,159,100,111,60,243,153,160,197,124,184,75,100,58,36,92,61,35,67,167,153,63,235,81,127,166,140,10,10,75,207,72,195,173,17,145,8,174,12,187,160,69,6,65,218,195,83,30,88,249,174,51,232,45,235,34,71,34,19,201,202,208,95,14,47,60,203,217,12,191,195,72,172,160,236,198,2,25,133,200,96,93,62,189,250,201,177,157,67,103,44,222,253,76,180,219,147,55,20,181,11,174,17,80,248,60,160,73,66,134,117,213,111,186,21,147,249,217,235,104,194,75,221,15,86,215,246,170,191,192,30,43,161,163,254,23,129,195,62,160,210,51,42,201,166,155,180,221,53,179,118,150,186,11,161,104,137,9,243,242,52,64,198,98,4,136,173,11,120,30,228,45,128,249,2,17,160,241,253,162,223,13,151,129,106,71,171,42,127,7,144,196,89,218,86,116,33,10,90,24,74,50,124,250,154,6,30,204,52,160,87,56,156,240,50,146,161,64,143,153,42,223,141,19,115,222,160,73,28,165,47,65,193,206,44,117,95,28,49,10,71,135,160,172,22,111,72,61,19,97,8,239,236,43,67,239,109,122,72,221,26,59,100,16,147,175,143,84,87,107,223,40,212,24,192,160,105,180,254,118,209,249,243,30,47,174,157,123,31,28,92,173,95,75,28,59,14,131,194,237,4,103,198,68,121,84,158,22,160,75,33,8,10,209,53,124,87,81,111,26,122,240,224,255,72,44,104,194,170,32,237,178,185,168,184,206,114,159,252,254,151,160,138,165,238,37,79,148,189,21,216,181,201,240,203,120,232,88,153,73,160,176,162,18,92,201,98,171,10,98,80,171,53,142,160,197,44,65,238,164,181,232,212,218,43,37,28,166,228,208,85,216,69,45,167,185,201,68,139,2,70,26,215,16,104,240,50,160,143,62,48,137,152,185,29,65,77,145,33,213,106,141,178,236,163,68,46,177,217,31,207,72,200,156,114,146,109,31,183,61,160,202,20,88,50,164,115,21,140,89,39,222,45,137,136,133,36,220,7,11,3,97,200,31,174,140,185,222,166,112,15,37,215,160,99,113,35,144,199,159,54,137,69,3,35,22,138,187,245,43,31,198,30,109,120,52,81,85,43,29,208,113,143,32,81,238,160,9,214,197,78,40,162,244,161,147,207,187,201,198,67,41,117,106,89,167,210,143,178,183,130,1,85,166,124,161,90,67,45,160,164,70,168,146,144,72,153,220,42,105,249,98,37,176,145,162,255,5,152,53,53,7,185,254,131,212,136,168,223,36,44,163,160,54,42,195,128,194,57,154,106,58,221,80,76,3,21,122,226,136,155,43,106,216,81,41,51,101,113,142,192,156,95,244,138,160,170,196,127,195,222,183,180,220,198,184,161,14,101,196,198,162,17,72,77,175,161,80,250,39,2,95,243,98,16,135,171,41,160,142,81,242,16,158,40,64,1,200,17,14,9,253,206,160,26,252,142,190,249,123,164,252,157,11,111,44,86,223,56,201,136,160,9,109,137,93,119,160,113,157,138,95,52,119,235,205,25,81,199,135,214,159,1,108,40,176,38,139,12,203,110,252,64,199,128,249,2,17,160,135,221,4,44,133,173,110,142,86,55,202,166,131,41,7,219,77,89,205,59,17,225,172,3,10,52,48,36,75,44,220,101,160,31,204,144,179,200,81,74,113,20,11,37,11,147,231,15,171,220,194,192,146,44,162,96,135,80,116,233,230,238,141,197,62,160,27,254,161,20,83,119,47,221,56,180,7,63,74,237,146,239,44,112,30,252,247,219,150,146,115,27,162,216,7,70,178,10,160,248,83,183,91,103,126,166,135,148,75,193,254,126,229,11,237,204,216,208,67,144,123,43,90,120,88,91,218,129,122,44,195,160,133,41,210,0,121,189,156,159,61,91,182,212,179,251,11,36,29,47,1,182,124,81,194,29,20,89,249,207,160,147,204,151,160,187,95,169,59,146,60,74,149,83,99,141,242,32,165,29,102,244,20,123,69,138,133,16,221,191,232,48,112,91,93,254,39,160,95,29,243,147,247,99,62,218,39,147,179,116,17,75,232,215,54,113,131,232,195,247,142,77,76,174,165,13,76,187,170,88,160,183,23,235,172,116,222,145,47,229,22,150,215,21,14,180,217,97,166,107,219,224,176,116,61,142,73,127,118,2,2,145,250,160,9,49,45,1,139,28,225,224,188,74,161,183,175,16,104,171,121,93,11,181,209,115,83,22,86,95,135,157,51,237,12,49,160,66,63,3,48,22,120,38,33,233,32,217,81,146,122,47,158,82,86,236,86,39,83,175,237,71,166,95,94,47,51,1,247,160,55,46,103,2,238,81,228,215,121,72,206,235,197,253,49,207,142,208,197,202,187,234,113,27,190,12,34,12,108,68,204,30,160,45,186,90,109,120,37,191,119,36,240,139,183,161,16,50,2,15,148,19,85,35,165,201,158,93,15,188,58,116,143,222,225,160,95,214,205,205,1,99,185,83,254,165,95,40,132,242,158,37,230,185,237,39,237,221,239,113,173,121,134,33,126,242,91,226,160,229,125,154,65,74,27,201,43,129,223,51,234,171,33,118,111,114,67,84,215,216,233,24,128,121,101,12,204,32,29,230,118,160,143,125,42,166,131,241,164,129,240,192,125,56,89,249,135,100,79,142,7,126,241,59,175,137,174,172,210,82,209,206,165,211,160,47,224,184,175,208,78,3,240,162,60,208,155,155,235,72,119,19,60,205,31,175,95,44,215,172,135,90,54,236,98,246,250,128,249,2,17,160,26,208,188,159,233,21,8,14,104,22,160,92,115,83,198,59,190,61,133,253,100,134,223,54,108,71,16,239,91,211,51,42,160,2,42,172,180,12,135,242,21,81,185,146,244,21,184,180,247,185,230,37,208,78,86,28,184,25,138,242,13,0,253,113,100,160,172,3,12,155,84,22,67,3,183,178,11,91,186,187,217,46,133,193,189,153,162,156,9,188,49,15,236,101,227,201,64,92,160,67,230,11,251,44,10,154,59,108,150,95,18,167,219,11,80,94,226,70,127,72,164,209,108,175,174,189,169,50,166,230,167,160,153,217,194,11,54,250,35,220,244,127,4,27,188,217,104,65,172,211,150,74,66,143,171,13,145,66,78,248,111,51,44,127,160,226,204,173,104,219,42,214,65,201,189,108,8,11,199,215,111,86,168,134,229,198,231,103,246,253,230,97,13,151,43,209,252,160,96,111,242,54,147,197,79,44,237,118,58,118,223,62,121,179,123,109,245,45,249,146,162,200,64,182,40,109,188,164,51,174,160,98,40,204,248,241,7,55,45,77,173,238,250,208,103,222,39,158,49,180,134,203,82,196,44,69,232,218,59,63,97,75,180,160,14,62,23,133,50,194,46,72,128,17,137,251,131,180,44,12,173,106,72,57,127,111,105,227,106,238,146,230,86,223,208,136,160,221,91,240,128,60,170,2,79,131,203,71,159,184,220,103,70,54,56,18,159,225,141,229,204,40,140,37,245,20,90,23,165,160,142,155,238,89,14,152,73,65,58,215,170,53,76,199,167,180,183,67,124,170,80,78,160,240,24,218,39,89,156,215,80,166,160,129,44,246,149,175,53,117,0,135,11,112,4,78,222,20,78,157,241,114,151,0,154,92,46,214,219,117,22,138,173,2,240,160,43,221,146,65,138,243,169,40,119,163,38,97,194,93,42,224,180,158,13,148,115,235,105,98,87,78,67,249,76,106,81,95,160,32,67,119,194,8,235,215,253,68,107,49,163,203,29,111,23,177,28,75,3,195,83,131,29,183,149,242,132,215,48,12,145,160,240,194,208,96,78,138,97,218,189,41,62,159,139,225,250,211,17,161,128,215,177,17,50,110,81,225,101,31,239,103,232,237,160,148,78,128,226,40,158,17,222,104,216,74,238,200,93,241,193,216,234,169,30,22,171,188,158,158,94,127,52,212,116,177,161,128,249,2,17,160,115,20,231,212,152,98,211,129,72,227,76,19,250,54,197,235,226,66,21,159,57,72,152,10,167,59,158,112,251,134,39,77,160,50,156,107,33,26,162,38,138,103,176,206,131,50,208,107,117,129,163,4,133,133,209,239,8,222,5,84,14,38,255,129,52,160,175,11,24,143,24,188,231,73,147,188,170,75,162,211,14,121,1,84,242,159,228,147,188,71,20,4,183,137,106,255,33,224,160,240,35,225,62,138,142,179,80,79,233,60,83,124,247,95,106,80,24,23,188,151,232,14,125,204,229,47,225,14,101,15,111,160,2,148,192,151,232,233,140,133,199,166,1,248,65,44,197,198,97,221,55,57,35,180,182,172,78,90,126,5,168,100,107,246,160,15,147,81,67,234,238,219,73,83,26,242,7,46,146,127,60,91,130,95,56,121,173,45,6,83,171,146,210,5,103,48,18,160,58,206,231,64,221,55,121,192,72,176,160,234,173,33,210,121,175,129,71,158,172,35,85,188,53,8,107,252,187,41,78,64,160,226,166,86,21,64,29,149,83,235,139,79,66,9,82,196,18,50,91,161,245,2,102,207,105,70,2,211,96,99,194,172,180,160,93,11,236,214,2,112,13,10,228,142,16,244,169,126,29,153,55,60,25,180,86,44,150,230,211,210,155,45,3,83,143,219,160,161,245,213,13,84,188,201,181,231,185,33,94,220,35,155,196,221,1,236,114,1,208,188,161,230,61,72,91,176,159,77,220,160,215,94,236,0,80,110,146,174,239,176,124,184,204,174,174,172,181,132,106,190,38,217,75,255,130,47,217,75,253,109,174,197,160,191,218,248,251,68,140,9,114,49,163,0,161,18,126,252,26,153,239,13,111,172,45,116,140,253,219,25,202,202,94,248,46,160,117,73,250,20,108,233,125,57,166,40,69,227,149,216,244,88,64,206,161,183,249,72,222,239,37,171,86,224,37,112,156,216,160,196,28,140,174,232,227,217,179,9,87,184,195,67,44,121,241,236,19,125,128,123,91,79,199,10,90,108,82,32,247,70,66,160,93,123,139,216,185,254,68,47,38,206,125,228,31,103,114,214,251,87,38,86,17,17,247,28,22,161,106,20,228,181,178,17,160,22,117,168,69,8,248,8,11,237,192,24,139,75,110,204,2,8,255,103,68,95,9,28,105,143,227,97,40,175,119,27,109,128,249,1,17,128,128,160,181,97,232,88,66,17,18,35,3,143,215,239,40,90,191,138,243,72,211,244,159,219,42,74,106,25,118,240,160,119,80,105,160,234,98,171,93,187,172,62,5,38,128,89,224,209,164,129,90,20,61,240,191,15,26,183,186,83,42,58,37,66,11,254,15,160,96,225,198,195,140,205,201,110,250,239,125,190,22,27,158,97,43,64,19,1,78,92,198,96,160,180,205,34,64,36,224,31,128,128,160,148,190,54,26,158,232,77,165,166,153,183,126,156,153,157,222,72,80,163,26,13,208,25,19,10,57,6,19,72,28,54,228,160,107,158,152,156,242,159,119,188,69,88,76,138,214,139,31,148,197,67,186,238,138,27,15,17,15,82,134,130,129,123,13,149,128,160,83,166,70,37,247,111,60,166,12,130,113,234,5,146,16,236,25,117,145,168,115,14,113,117,255,25,196,44,181,180,199,185,160,127,99,186,184,188,30,186,217,4,229,71,62,203,180,184,121,75,158,34,163,30,82,176,243,129,182,216,144,24,196,66,33,160,62,113,155,138,140,159,169,35,227,191,166,57,200,50,150,114,86,163,83,46,242,62,74,48,114,4,81,12,168,194,207,241,128,128,128,128,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,248,111,157,63,140,127,171,87,71,26,42,65,56,127,155,13,14,171,34,148,87,197,2,75,214,207,183,45,215,187,162,254,184,79,248,77,1,137,226,46,222,37,207,76,119,65,53,160,205,236,27,44,162,175,97,130,199,197,211,96,143,133,228,220,83,137,241,21,8,226,58,161,106,231,96,94,74,213,138,142,160,226,231,167,82,74,152,206,98,158,228,6,193,92,81,166,131,228,22,127,11,116,234,35,5,102,221,236,231,174,157,111,11,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
+//     let depth = 8;
+//     // let trie_proof = TrieProof32
+//     // {
+//     //     proof: path,
+//     //     key: [0xf1,0xe7,0xe7,0xfd,0xd4,0x4d,0x94,0xfa,0xb2,0xff,0x26,0xc5,0x2f,0x73,0xe2,0x34,0x50,0xbb,0x8b,0xc7,0x1a,0xc6,0x56,0x58,0xa0,0xe9,0xc3,0x8d,0xed,0x3f,0x7f,0x83],
+//     //     value: 
+//     // };
+
+// }
 #[test]
 fn cryptopunk1() // Who owns the first cryptopunk? cf. https://www.youtube.com/watch?v=2-yYtEJdrFY&t=266s
 {
@@ -392,25 +421,6 @@ fn cryptopunk1() // Who owns the first cryptopunk? cf. https://www.youtube.com/w
 
 }
 
-// Auxiliary function tests
-#[test]
-fn fixed_key_lookup_test()
-{
-    let x3 = [246,159,32,176,50,213,165,250,58,91,101,68,86,110,228,106,15,107,143,232,177,55,94,200,120,220,59,230,88,11,7,132,149,149,148,184,143,97,230,251,218,131,251,255,250,190,54,65,18,19,116,128,57,128,24,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
-    let rlp_list3: rlp::RLP_List<MAX_NUM_FIELDS> = rlp::decode1(x3);
-    assert(rlp_list3.num_fields == 2);
-    assert(rlp_list3.length[0] == 31);
-    assert(rlp_list3.length[1] == 21);
-    let (value3, value_length3, _key_offset3) = get_fixed32(
-	    key_as_nibbles([0xed,0x65,0xb0,0x32,0xd5,0xa5,0xfa,0x3a,0x5b,0x65,0x44,0x56,0x6e,0xe4,0x6a,0x0f,0x6b,0x8f,0xe8,0xb1,0x37,0x5e,0xc8,0x78,0xdc,0x3b,0xe6,0x58,0x0b,0x07,0x84,0x95]),
-	    4,
-	    x3);
-    assert(value_length3 == 21);
-    assert(value3[0] == 0x94);
-    assert(value3[20] == 0x18);
-    
-}
-
 #[test]
 fn nibble_check()
 {
@@ -432,18 +442,4 @@ fn compact_decode_test()
     assert(len2 == 5);
     assert([nibble2[0], nibble2[1], nibble2[2], nibble2[3], nibble2[4]] == [15,1,12,11,8]);
     
-}
-
-// Omit the following test due to compiler panic
-
-#[test]
-fn encode_value32_test()
-{
-    let val1 = [0xb8,0x8f,0x61,0xe6,0xfb,0xda,0x83,0xfb,0xff,0xfa,0xbe,0x36,0x41,0x12,0x13,0x74,0x80,0x39,0x80,0x18,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00];
-    let val1_length = 20;
-
-    let encoded_val1 = encode_value32(val1,val1_length);
-
-    assert(encoded_val1.0 == [0x94,0xb8,0x8f,0x61,0xe6,0xfb,0xda,0x83,0xfb,0xff,0xfa,0xbe,0x36,0x41,0x12,0x13,0x74,0x80,0x39,0x80,0x18,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00]);
-    assert(encoded_val1.1 == 21);
 }
