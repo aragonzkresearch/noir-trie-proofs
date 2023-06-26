@@ -12,7 +12,7 @@ global KEY_LENGTH: Field = 32; // key length in bytes; <= 55 for simplicity
 global NIBBLE_LENGTH: Field = 64; // = 2*KEY_LENGTH
 
 // For tries with 32-byte long keys, we we can bound the byte length of any node from above by the following constant:
-global MAX_NODE_LENGTH: Field = 532; // = MAX_RLP_LIST_HEADER_LENGTH (= 1 + MAX_LENGTH_BYTES)
+global MAX_SP_NODE_LENGTH: Field = 532; // = MAX_RLP_LIST_HEADER_LENGTH (= 1 + MAX_LENGTH_BYTES)
 //   + 16*MAX_RLP_ELEMENT_LENGTH (= 16*(1 + KEY_LENGTH))
 // + LENGTH_OF_NULL_ELEMENT (= 1)
 
@@ -20,22 +20,25 @@ global MAX_NUM_FIELDS: Field = 17;
 
 // Type for account and storage proofs corresponding to `ethers-rs` StorageProof type
 // Both involve 32-byte keys
-// TODO: Add max_node_length to trie proof struct as comptime Field parameter to allow arbitrary fixed-length keys. Requires ability to declare arrays of length expressed as a comptime Field variable.
+// TODO: Add comptime Field parameters to
+// - bound the sizes of the nodes embedded in `proof` to allow arbitrary fixed-length keys
+// - bound the key length to allow variable-length keys
+// These would require the ability to declare arrays of length expressed as a comptime Field variable.
 struct TrieProof32<N, VALUE_LEN>
 {
     key: [u8; KEY_LENGTH], // Key to look up along proof path
-    proof: [u8; N], // RLP encoded proof path; assumed to be obtained by right-padding each node (e.g. with zeros) to form a list of length MAX_NODE_LENGTH and concatenated in order.
+    proof: [u8; N], // RLP encoded proof path; assumed to be obtained by appropriately right-padding each node (e.g. with zeros) and concatenating in order. The size of each node will depend on the application, e.g. MAX_SP_NODE_LENGTH for storage proofs.
     depth: Field, // Depth of proof. Necessary for technical reasons
     value: [u8; VALUE_LEN]
 }
 
-// Ethereum trie proof verifier for 32-byte long keys
-fn verify_proof32<N, VALUE_LEN>( // N *must* be a multiple of MAX_NODE_LENGTH!
+// Ethereum storage trie proof verifier for 32-byte long keys
+fn verify_storage_proof<N, VALUE_LEN>( // N *must* be a multiple of MAX_SP_NODE_LENGTH!
     root_hash: [u8; KEY_LENGTH], // Hash of root, i.e. first, node.
     trie_proof: TrieProof32<N, VALUE_LEN> // Trie proof struct
 ) -> bool
 {
-    assert((N as u32) % (MAX_NODE_LENGTH as u32) == 0); // Check that N is a multiple of MAX_NODE_LENGTH
+    assert((N as u32) % (MAX_SP_NODE_LENGTH as u32) == 0); // Check that N is a multiple of MAX_SP_NODE_LENGTH
 
     let key = trie_proof.key;
     
@@ -51,18 +54,18 @@ fn verify_proof32<N, VALUE_LEN>( // N *must* be a multiple of MAX_NODE_LENGTH!
 
     let mut extracted_hash = root_hash;
 
-    let mut node = [0; MAX_NODE_LENGTH];
+    let mut node = [0; MAX_SP_NODE_LENGTH];
 
-    for i in 0..(path.len()/MAX_NODE_LENGTH - 1)
+    for i in 0..(path.len()/MAX_SP_NODE_LENGTH - 1)
     {
         let range_p = (i as u8) < (depth - 1) as u8; // Range predicate
         
         let k = if (range_p) {i} else {0}; // Restrict index to range {0, ..., depth - 2}
 
         // Populate node array
-	    for j in 0..MAX_NODE_LENGTH
+	    for j in 0..MAX_SP_NODE_LENGTH
 	    {
-		    node[j] = path[j + k*MAX_NODE_LENGTH];
+		    node[j] = path[j + k*MAX_SP_NODE_LENGTH];
 	    }
 
         assert(!range_p | verify_node_hash(node, extracted_hash)); // If within range, node hash should match the hash extracted from the preceding node.
@@ -78,9 +81,9 @@ fn verify_proof32<N, VALUE_LEN>( // N *must* be a multiple of MAX_NODE_LENGTH!
     }
     
     // Treat final node as the preceding nodes...
-    for j in 0..MAX_NODE_LENGTH
+    for j in 0..MAX_SP_NODE_LENGTH
 	{
-		node[j] = path[j + (depth - 1)*MAX_NODE_LENGTH];
+		node[j] = path[j + (depth - 1)*MAX_SP_NODE_LENGTH];
 	}
 
     assert(verify_node_hash(node, extracted_hash));
@@ -417,7 +420,7 @@ fn cryptopunk1() // Who owns the first cryptopunk? cf. https://www.youtube.com/w
         depth: depth,
         value: [0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0xb8,0x8f,0x61,0xe6,0xfb,0xda,0x83,0xfb,0xff,0xfa,0xbe,0x36,0x41,0x12,0x13,0x74,0x80,0x39,0x80,0x18]
     };
-    assert(verify_proof32(storage_hash, trie_proof));
+    assert(verify_storage_proof(storage_hash, trie_proof));
 
 }
 
