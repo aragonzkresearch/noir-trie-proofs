@@ -102,6 +102,7 @@ fn decode_len<N>(arr: [u8; N]) -> RLP_Header
 
     RLP_Header::new(offset, len, data_type)
 }
+
 // RLP string decoder
 fn decode0<N>(input: [u8; N])
 			              -> (Field, Field)
@@ -273,7 +274,7 @@ fn rlp_length_check()
 
 fn take_dot_drop<T, N, M>(arr: [T; N], n: Field) -> [T; M] // = drop n . take M
 {
-    let mut out = [arr[0]; M];
+    let mut out = [dep::std::unsafe::zeroed(); M];
 
     for i in 0..M
     {
