@@ -206,10 +206,14 @@ fn verify_node_hash<N>(node: [u8; N], hash: [u8; 32])
                        -> bool
 {
     // Extract actual length of node
-    let node_length = { let rlp_header = rlp::decode_len(node); rlp_header.offset + rlp_header.length } as u32; // Determine length of node
+    let node_length = { let rlp_header = rlp::decode_len(node); rlp_header.offset + rlp_header.length }; // Determine length of node
 
+    // Extra safety
+    let range_p = ((node_length as u32) > (node.len() as u32)) as Field;
+    let safe_length = range_p*node.len() + (1-range_p)*node_length;
+        
     // Compute Keccak256 hash of node
-	let node_hash = keccak256(node, node_length);
+	let node_hash = keccak256(node, safe_length as u32);
 
     // Compare hashes
 	node_hash == hash
