@@ -104,7 +104,6 @@ impl<PROOF_LEN, VALUE_LEN> TrieProof<32, PROOF_LEN, VALUE_LEN>
         // Decode extracted value
         let (dec_value_offset, dec_value_len) = rlp::decode0(extracted_value);
         assert(dec_value_len == value_length);
-        dep::std::println(dec_value_len);
         
         for i in 0..VALUE_LEN
         {
