@@ -1,5 +1,5 @@
 [package]
-name = "noir-trie-proofs"
+name = "noir_trie_proofs"
 authors = [""]
 compiler_version = "0.1"
 
