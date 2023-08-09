@@ -364,7 +364,7 @@ fn resolve17<N>(
 
 // Resolve a 2-node, i.e. a LEAF or EXTENSION.
 fn resolve2<N, VALUE_LEN>(
-    node_type: comptime Field,
+    node_type: Field,
     node: [u8; N],
     rlp_list: rlp::RLP_List<MAX_NUM_FIELDS>,
     key: [u4; NIBBLE_LENGTH],
