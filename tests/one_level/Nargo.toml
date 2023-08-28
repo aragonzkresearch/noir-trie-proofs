@@ -5,4 +5,4 @@ authors = [""]
 compiler_version = "0.10.0"
 
 [dependencies]
-trie = { path = "../.." }
+trie = { path = "../../lib" }
