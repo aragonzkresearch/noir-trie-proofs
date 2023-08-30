@@ -1,8 +1,7 @@
 [package]
-name = "rlp_decode"
-type = "bin"
+name = "noir_trie_proofs"
+type = "lib"
 authors = [""]
 compiler_version = "0.10.0"
 
 [dependencies]
-trie = { path = "../../lib" }
