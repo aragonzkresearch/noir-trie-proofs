@@ -20,26 +20,37 @@ global MAX_ACCOUNT_STATE_LENGTH: Field = 134;
 
 global MAX_NUM_FIELDS: Field = 17;
 
-// Type for storage proofs corresponding to `ethers-rs` StorageProof type
-// Involves 32-byte keys
+/// Type for storage proofs corresponding to `ethers-rs` StorageProof type
+/// Involves 32-byte keys
 // TODO: Add comptime Field parameters to
 // - bound the sizes of the nodes embedded in `proof` to allow arbitrary fixed-length keys
 // - bound the key length to allow variable-length keys
 // These would require the ability to declare arrays of length expressed as a comptime Field variable.
 struct TrieProof<KEY_LEN, PROOF_LEN, VALUE_LEN> // VALUE_LEN should be smaller than 56 bytes.
 {
-    key: [u8; KEY_LEN], // Unhashed key to look up along proof path
-    proof: [u8; PROOF_LEN], // RLP encoded proof path; assumed to be obtained by appropriately right-padding each node (e.g. with zeros) and concatenating in order. The size of each node will depend on the application, e.g. MAX_TRIE_NODE_LENGTH for storage proofs.
-    depth: Field, // Depth of proof. Necessary for technical reasons
+    /// Unhashed key to look up along proof path
+    key: [u8; KEY_LEN],
+    /// RLP encoded proof path; assumed to be obtained by appropriately right-padding each node (e.g. with zeros) and concatenating in order. The size of each node will depend on the application, e.g. MAX_TRIE_NODE_LENGTH for storage proofs.
+    proof: [u8; PROOF_LEN],
+    /// Depth of proof. Necessary for technical reasons.
+    depth: Field,
+    /// The value the given proof path should terminate with.
     value: [u8; VALUE_LEN]
 }
 
 impl<PROOF_LEN, VALUE_LEN> TrieProof<32, PROOF_LEN, VALUE_LEN>
 {
-    // Ethereum storage trie proof verifier
-    fn verify_storage_root( // PROOF_LEN *must* be a multiple of MAX_TRIE_NODE_LENGTH!
+    /// Ethereum storage proof verifier. Returns true if all constraints are satisfied.
+    ///
+    /// # Arguments
+    /// * `self` - The proof to be verified.
+    /// * `trie_root` - The root of the trie as a hash
+    ///
+    /// # Quirks
+    /// * `PROOF_LEN`, the length of the byte array representing the proof path, *must* be a multiple of MAX_TRIE_NODE_LENGTH.
+    fn verify_storage_root(
         self,
-        trie_root: [u8; KEY_LENGTH], // Hash of root, i.e. first, node.
+        trie_root: [u8; KEY_LENGTH],
     ) -> bool
     {
         assert((PROOF_LEN as u32) % (MAX_TRIE_NODE_LENGTH as u32) == 0); // Check that N is a multiple of MAX_TRIE_NODE_LENGTH
@@ -119,7 +130,11 @@ impl<PROOF_LEN, VALUE_LEN> TrieProof<32, PROOF_LEN, VALUE_LEN>
 
 impl<PROOF_LEN, VALUE_LEN> TrieProof<20, PROOF_LEN, VALUE_LEN>
 {
-    // Ethereum state trie proof verifier
+    /// Ethereum state proof verifier. Returns true if all constraints are satisfied.
+    ///
+    /// # Arguments
+    /// * `self` - The proof to be verified.
+    /// * `trie_root` - The root of the trie
     fn verify_state_root( // PROOF_LEN *must* be a multiple of MAX_TRIE_NODE_LENGTH!
         self,
         trie_root: [u8; KEY_LENGTH], // Hash of root, i.e. first, node.
@@ -174,7 +189,7 @@ impl<PROOF_LEN, VALUE_LEN> TrieProof<20, PROOF_LEN, VALUE_LEN>
 
         assert(verify_node_hash(node, extracted_hash));
 
-        let rlp_list: rlp::RLP_List<MAX_NUM_FIELDS> = rlp::decode1(node); // TODO: For storage proofs, replace with decode1_small_lis
+        let rlp_list: rlp::RLP_List<MAX_NUM_FIELDS> = rlp::decode1(node);
         
         // ...except extract a value rather than a key.
  	    let (mut extracted_value, extracted_value_length, terminal_key_ptr): ([u8; MAX_ACCOUNT_STATE_LENGTH], Field, Field) = resolve2(LEAF, node, rlp_list, key_nibbles, key_ptr);
@@ -200,7 +215,11 @@ impl<PROOF_LEN, VALUE_LEN> TrieProof<20, PROOF_LEN, VALUE_LEN>
     }
 }
 
-// Verify Keccak hash of node
+/// Trie node hash verifier. Returns true if the node has the specified keccak256 hash.
+///
+/// # Arguments
+/// * `node` - RLP-encoded trie node
+/// * `hash` - 32-byte hash value
 fn verify_node_hash<N>(node: [u8; N], hash: [u8; 32])
                        -> bool
 {
@@ -219,7 +238,11 @@ fn verify_node_hash<N>(node: [u8; N], hash: [u8; 32])
 }
 
 
-// Key-to-nibble conversion
+/// Key-to-nibble converter. Returns an array (twice the length of the input array)
+/// of 4-bit elements representing the nibbles of the input array.
+///
+/// # Arguments
+/// * `key` - Array of bytes representing a key
 fn key_as_nibbles<KEY_LEN, NIB_LEN>(key: [u8; KEY_LEN]) -> [u4; NIB_LEN]
 {
     assert(NIB_LEN == 2*KEY_LEN);
@@ -235,8 +258,12 @@ fn key_as_nibbles<KEY_LEN, NIB_LEN>(key: [u8; KEY_LEN]) -> [u4; NIB_LEN]
     nibkey
 }
 
-// Decode leaf/extension node's first slot into nibbles
-// Returns nibbles in a right-padded array together with the number of nibbles.
+/// Leaf/extension node nibble decoder. Returns the nibbles in the first field
+/// in a right-padded array together with the number of nibbles.
+///
+/// # Arguments
+/// * `input`: The first field of a leaf/extension node as a (right-padded) byte array
+/// * `length`: The actual length of the data in `input`
 fn compact_decode<MAX_ENC_LEN, NIB_LEN>(input: [u8; MAX_ENC_LEN], length: Field) -> ([u4; NIB_LEN], Field)
 {
 
@@ -276,13 +303,18 @@ fn compact_decode<MAX_ENC_LEN, NIB_LEN>(input: [u8; MAX_ENC_LEN], length: Field)
     out
 }
 
-// Resolve nibble (or sequence of nibbles) in RLP-encoded node
-// Assumes 32-byte key length
+/// Non-terminal nibble resolver (assuming 32-byte fixed key length).
+/// Returns the extracted hash together with an advanced key pointer.
+///
+/// # Arguments
+/// * `key` - Array containing the nibbles to be resolved
+/// * `key_ptr` - Pointer to the nibbles in `key` to be resolved
+/// * `node` - RLP-encoded byte array of branch or extension node
 fn resolve_nibble32<N>(
     key: [u4; NIBBLE_LENGTH],
     mut key_ptr: Field,
     node: [u8; N]) ->
-    ([u8; 32], // Extracted key
+    ([u8; 32], // Extracted hash
     Field) // New key pointer
 {
     let rlp_list: rlp::RLP_List<MAX_NUM_FIELDS> = rlp::decode1_small_lis(node); // Assumes no intermediate nodes have slots with >= 56 bytes, which is the case for state and storage proofs.
@@ -291,7 +323,7 @@ fn resolve_nibble32<N>(
     let mut resolved_key = [0; 32];
     let mut resolved_key_length = 0;
     
-    if num_fields == 2 // If we are dealing with a leaf/extension node
+    if num_fields == 2 // If we are dealing with an extension node
     {
         // Resolve 2-node
         let node_resolution: ([u8; 32], Field, Field) = resolve2(EXTENSION, node, rlp_list, key, key_ptr);
@@ -318,14 +350,22 @@ fn resolve_nibble32<N>(
     (resolved_key, key_ptr)
 }
 
-// Resolve a 17-node, i.e. a BRANCH.
+/// Branch (i.e. 17-node) resolver. Assumes 32-byte fixed key length (i.e. slot 17 should be empty).
+/// Returns the extracted hash, its length and the advanced key pointer.
+///
+/// # Arguments
+/// * `node` - RLP-encoded branch node
+/// * `rlp_list` - RLP list look-up table for `node`
+/// * `key` - Array containing the nibbles to be resolved
+/// * `key_ptr` - Pointer to the nibbles in `key` to be resolved
+// TODO: Generalise to accommodate for variable key lengths.
 fn resolve17<N>(
     node: [u8; N],
     rlp_list: rlp::RLP_List<MAX_NUM_FIELDS>,
     key: [u4; NIBBLE_LENGTH],
     mut key_ptr: Field)
                       -> (
-    [u8; KEY_LENGTH], // Extracted key
+    [u8; KEY_LENGTH], // Extracted hash
     Field, // Extracted key length
     Field) // New key pointer
 {
@@ -338,6 +378,8 @@ fn resolve17<N>(
         assert(rlp_list.length[i]*(rlp_list.length[i] - KEY_LENGTH) == 0);
     }
 
+    // And the last slot should be empty
+    assert(rlp_list.length[16] == 0);
     
     let cur_nibble = key[key_ptr];
 	let resolved_key_length = rlp_list.length[cur_nibble as Field];
@@ -363,6 +405,15 @@ fn resolve17<N>(
 }
 
 // Resolve a 2-node, i.e. a LEAF or EXTENSION.
+/// Leaf/extension (i.e. 2-node) resolver.
+/// Returns the extracted value, its length and the advanced key pointer.
+///
+/// # Arguments
+/// * `node_type` - Node type, i.e. LEAF or EXTENSION
+/// * `node` - RLP-encoded leaf/extension node
+/// * `rlp_list` - RLP list look-up table for `node`
+/// * `key` - Array containing the nibbles to be resolved
+/// * `key_ptr` - Pointer to the nibbles in `key` to be resolved
 fn resolve2<N, VALUE_LEN>(
     node_type: Field,
     node: [u8; N],
@@ -370,7 +421,7 @@ fn resolve2<N, VALUE_LEN>(
     key: [u4; NIBBLE_LENGTH],
     mut key_ptr: Field)
                       -> (
-    [u8; VALUE_LEN], // Value
+    [u8; VALUE_LEN], // Extracted value
     Field, // Value length
     Field) // New key offset
 {
@@ -422,27 +473,11 @@ fn resolve2<N, VALUE_LEN>(
 }
 
 
-fn right_align_bytes<N>(arr: [u8; N], len: Field) -> [u8; N]
-{
-    assert((len as u32) < (N as u32));
-
-    let mut out = [0; N];
-    
-    let offset = N - len;
-
-    for i in 0..N
-    {
-        if (i as u32) >= (offset as u32)
-        {
-            out[i] = arr[i - offset];
-        }
-    }
-
-    out
-}
-
-// Function taking a left-padded byte array representing an integer and returning a right-padded one
-// together with its byte length.
+/// Function for expressing a big-endian byte array as a right-padded one.
+/// Returns a right-padded byte array together with the actual byte length of the number.
+///
+/// # Arguments
+/// * `in_value` - Byte array representing a number in big-endian form.
 fn byte_value<N>(in_value: [u8; N]) -> ([u8; N], Field)
 {
     let mut value_length = 0;
@@ -459,31 +494,27 @@ fn byte_value<N>(in_value: [u8; N]) -> ([u8; N], Field)
     (value, value_length)
 }
 
+/// Left-shift for byte arrays
+/// Returns an appropriately shifted byte array.
+///
+/// # Arguments
+/// * `input` - Byte array
+/// * `n` - Amount to left-shift elements by
+///
+/// # Quirks
+/// The empty slots are set to 0.
 fn left_byte_shift<N>(input: [u8; N], n: Field) -> [u8; N]
 {
     let mut out = [0; N];
 
     for i in 0..N
     {
-        if ((i + n) as u32) < (N as u32)
-        {
-            out[i] = input[i+n];
-        }
+        // Restrict indices to be shifted, i.e. ∀i: i+n < N, out[i] ← input[i+n].
+        let index_p = (((i+n) as u32) < (N as u32)) as Field;
+        out[i] = (index_p as u8)*input[index_p*(i+n)];
     }
 
     out
-}
-
-fn first_n_bytes_eq<N>(arr1: [u8; N], arr2: [u8; N], n: Field) -> bool
-{
-    for i in 0..N
-    {
-        let range_p = (i as u32) < (n as u32);
-
-        assert(!range_p | (arr1[i] == arr2[i]));
-    }
-    
-    true
 }
 
 #[test]
