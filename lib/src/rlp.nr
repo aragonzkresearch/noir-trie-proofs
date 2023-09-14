@@ -184,8 +184,7 @@ fn decode1<N, NUM_FIELDS>(input: [u8; N])
         num_fields += loop_p;
     }
 
-    // Ensure that we have exhausted the data
-    assert(total_len == offset);
+    assert(total_len == offset); // Data must have been exhausted, else there are more fields than expected.
 
     RLP_List::new(dec_off, dec_len, dec_type, num_fields)
 }

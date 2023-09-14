@@ -102,7 +102,7 @@ impl<PROOF_LEN, VALUE_LEN> TrieProof<32, PROOF_LEN, VALUE_LEN>
 
         assert(verify_node_hash(node, extracted_hash));
 
-        let rlp_list: rlp::RLP_List<MAX_NUM_FIELDS> = rlp::decode1_small_lis(node); // Both slots contain less than 56 bytes.
+        let rlp_list: rlp::RLP_List<2> = rlp::decode1_small_lis(node); // Terminal node must be a 2-node, and both slots contain less than 56 bytes.
         
         // ...except extract a value rather than a key.
  	    let (mut extracted_value, extracted_value_length, terminal_key_ptr): ([u8; 33], Field, Field) = resolve2(LEAF, node, rlp_list, key_nibbles, key_ptr);
@@ -189,7 +189,7 @@ impl<PROOF_LEN, VALUE_LEN> TrieProof<20, PROOF_LEN, VALUE_LEN>
 
         assert(verify_node_hash(node, extracted_hash));
 
-        let rlp_list: rlp::RLP_List<MAX_NUM_FIELDS> = rlp::decode1(node);
+        let rlp_list: rlp::RLP_List<2> = rlp::decode1(node); // Terminal node must be a 2-node
         
         // ...except extract a value rather than a key.
  	    let (mut extracted_value, extracted_value_length, terminal_key_ptr): ([u8; MAX_ACCOUNT_STATE_LENGTH], Field, Field) = resolve2(LEAF, node, rlp_list, key_nibbles, key_ptr);
@@ -359,9 +359,9 @@ fn resolve_nibble32<N>(
 /// * `key` - Array containing the nibbles to be resolved
 /// * `key_ptr` - Pointer to the nibbles in `key` to be resolved
 // TODO: Generalise to accommodate for variable key lengths.
-fn resolve17<N>(
+fn resolve17<N, NUM_FIELDS>(
     node: [u8; N],
-    rlp_list: rlp::RLP_List<MAX_NUM_FIELDS>,
+    rlp_list: rlp::RLP_List<NUM_FIELDS>,
     key: [u4; NIBBLE_LENGTH],
     mut key_ptr: Field)
                       -> (
@@ -414,10 +414,10 @@ fn resolve17<N>(
 /// * `rlp_list` - RLP list look-up table for `node`
 /// * `key` - Array containing the nibbles to be resolved
 /// * `key_ptr` - Pointer to the nibbles in `key` to be resolved
-fn resolve2<N, VALUE_LEN>(
+fn resolve2<N, NUM_FIELDS, VALUE_LEN>(
     node_type: Field,
     node: [u8; N],
-    rlp_list: rlp::RLP_List<MAX_NUM_FIELDS>,
+    rlp_list: rlp::RLP_List<NUM_FIELDS>,
     key: [u4; NIBBLE_LENGTH],
     mut key_ptr: Field)
                       -> (
