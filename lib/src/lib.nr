@@ -1,23 +1,24 @@
-// Ethereum trie proof implementation
+/// Ethereum trie proof implementation
 use dep::std::hash::keccak256;
 
 mod rlp; // Module for required RLP encoding/decoding
 
-// 2-node enum
-global EXTENSION: Field = 0;
-global LEAF: Field = 1;
+/// 2-node enum
+global EXTENSION: Field = 0; global LEAF: Field = 1;
 
-// Constants for 32-byte long keys; TODO: Omit these when it is possible to replace constants with numeric generics.
-global KEY_LENGTH: Field = 32; // key length in bytes; <= 55 for simplicity
+/// Constants for 32-byte long keys; TODO: Omit these when it is possible to replace constants with numeric generics.
+global KEY_LENGTH: Field = 32; // (fixed) key length in bytes
 global NIBBLE_LENGTH: Field = 64; // = 2*KEY_LENGTH
 
-// For tries with 32-byte long keys, we we can bound the byte length of any node from above by the following constant:
+/// Maximum trie node length. For tries with 32-byte long keys, we we can bound the byte length of any node from above by this constant.
 global MAX_TRIE_NODE_LENGTH: Field = 532; // = MAX_RLP_LIST_HEADER_LENGTH (= 1 + MAX_LENGTH_BYTES)
 //   + 16*MAX_RLP_ELEMENT_LENGTH (= 16*(1 + KEY_LENGTH))
 // + LENGTH_OF_NULL_ELEMENT (= 1)
 
+/// Maximum number of bytes in an account state
 global MAX_ACCOUNT_STATE_LENGTH: Field = 134;
 
+/// Maximum number of RLP-encoded elements in a trie node
 global MAX_NUM_FIELDS: Field = 17;
 
 /// Type for storage proofs corresponding to `ethers-rs` StorageProof type
@@ -44,13 +45,13 @@ impl<PROOF_LEN, VALUE_LEN> TrieProof<32, PROOF_LEN, VALUE_LEN>
     ///
     /// # Arguments
     /// * `self` - The proof to be verified.
-    /// * `trie_root` - The root of the trie as a hash
+    /// * `storage_root` - The root of the storage trie as a hash
     ///
     /// # Quirks
     /// * `PROOF_LEN`, the length of the byte array representing the proof path, *must* be a multiple of MAX_TRIE_NODE_LENGTH.
     fn verify_storage_root(
         self,
-        trie_root: [u8; KEY_LENGTH],
+        storage_root: [u8; KEY_LENGTH]
     ) -> bool
     {
         assert((PROOF_LEN as u32) % (MAX_TRIE_NODE_LENGTH as u32) == 0); // Check that N is a multiple of MAX_TRIE_NODE_LENGTH
@@ -67,7 +68,7 @@ impl<PROOF_LEN, VALUE_LEN> TrieProof<32, PROOF_LEN, VALUE_LEN>
 
         let depth = self.depth; // Depth of proof path
 
-        let mut extracted_hash = trie_root;
+        let mut extracted_hash = storage_root;
 
         let mut node = [0; MAX_TRIE_NODE_LENGTH];
 
@@ -134,10 +135,10 @@ impl<PROOF_LEN, VALUE_LEN> TrieProof<20, PROOF_LEN, VALUE_LEN>
     ///
     /// # Arguments
     /// * `self` - The proof to be verified.
-    /// * `trie_root` - The root of the trie
+    /// * `state_root` - The root of the state trie as a hash
     fn verify_state_root( // PROOF_LEN *must* be a multiple of MAX_TRIE_NODE_LENGTH!
         self,
-        trie_root: [u8; KEY_LENGTH], // Hash of root, i.e. first, node.
+        state_root: [u8; KEY_LENGTH] // Hash of root, i.e. first, node.
     ) -> bool
     {
         assert((PROOF_LEN as u32) % (MAX_TRIE_NODE_LENGTH as u32) == 0); // Check that N is a multiple of MAX_TRIE_NODE_LENGTH
@@ -154,7 +155,7 @@ impl<PROOF_LEN, VALUE_LEN> TrieProof<20, PROOF_LEN, VALUE_LEN>
 
         let depth = self.depth; // Depth of proof path
 
-        let mut extracted_hash = trie_root;
+        let mut extracted_hash = state_root;
 
         let mut node = [0; MAX_TRIE_NODE_LENGTH];
 
