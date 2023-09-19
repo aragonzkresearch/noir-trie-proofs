@@ -105,7 +105,7 @@ fn decode_len<N>(arr: [u8; N]) -> RLP_Header
     // To compute length, first determine how many of the following bytes contain the length of the payload.
     let lenlen = prefix_p3 as Field * (1-prefix_p2 as Field) * (prefix - 0xb7) as Field + (1 - prefix_p4 as Field)*(prefix - 0xf7) as Field;
 
-    // Set length according to whether lenlen == 0.
+    // Set length according to whether it is contained in the prefix (i.e. lenlen == 0).
     let len = strict_if(
         lenlen == 0,
         strict_if(
