@@ -59,10 +59,7 @@ impl<NUM_FIELDS> RLP_List<NUM_FIELDS>
 /// * `arr` - RLP-encoded list
 /// * `lenlen` - Number of bytes containing the length of the payload
 fn data_len<N>(arr: [u8; N], lenlen: Field) -> Field
-{
-    // Byte length of payload length should not exceed postulated maximum
-    assert((lenlen as u32) <= (MAX_LEN_IN_BYTES as u32));
-    
+{    
     let mut out = 0;
 
     // Restrict loop to maximum length in bytes
