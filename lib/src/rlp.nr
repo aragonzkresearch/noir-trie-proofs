@@ -102,27 +102,20 @@ fn decode_len<N>(arr: [u8; N]) -> RLP_Header
 							                             1,
 							                             (1 + prefix - 0xf7) as Field))));
 
-    // To compute length, first assume we are dealing with a longer sequence of bytes.
+    // To compute length, first determine how many of the following bytes contain the length of the payload.
     let lenlen = prefix_p3 as Field * (1-prefix_p2 as Field) * (prefix - 0xb7) as Field + (1 - prefix_p4 as Field)*(prefix - 0xf7) as Field;
-    let short_p = (lenlen == 0) as Field; // Predicate for a 'short' sequence
 
-    // lenlen should not exceed MAX_LEN_IN_BYTES
-    assert((lenlen as u32) <= (MAX_LEN_IN_BYTES as u32));
-
-    let mut len = 0;
-
-    // Loop over following bytes ans restrict loop to maximum length in bytes
-    let loop_len_p = ((MAX_LEN_IN_BYTES as u32) < (arr.len() as u32 - 1)) as Field;
-    let loop_len = loop_len_p*(MAX_LEN_IN_BYTES - (arr.len() - 1)) + arr.len() - 1;
-    
-    for i in 0..loop_len
-    {
-	    let len_len_p = (((i as u32) < (lenlen as u32)) as Field);
-	    len = len_len_p*(256*len + (arr[i + 1] as Field)) + (1-len_len_p)*len;
-    }
-
-    // Set length according to short/long case
-    len = short_p*strict_if(prefix_p1, 1, strict_if(prefix_p2, (prefix - 0x80) as Field, (prefix - 0xc0) as Field)) + (1-short_p)*len;
+    // Set length according to whether lenlen == 0.
+    let len = strict_if(
+        lenlen == 0,
+        strict_if(
+            prefix_p1,
+            1,
+            strict_if(
+                prefix_p2,
+                (prefix - 0x80) as Field,
+                (prefix - 0xc0) as Field)),
+        data_len(arr, lenlen));
     
     // Extract data type of payload
     let data_type = (prefix >= 0xc0) as Field;
