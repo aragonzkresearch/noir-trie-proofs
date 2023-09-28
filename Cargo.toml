@@ -1,0 +1,18 @@
+[package]
+name = "noir-trie-proofs"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "ntp-fetch"
+path = "src/bin.rs"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+ethers = { version = "2.0", features = ["rustls"]}
+tokio = { version = "1.0", features = ["rt", "rt-multi-thread", "macros"] }
+clap = { version = "4.3.3", features = ["derive", "env"] }
