@@ -109,7 +109,7 @@ The following are the global arguments:
 - `-m, --max-depth <MAX_DEPTH>` is required and specifies the maximum allowable depth of the fetched proof.
 - `-b, --block-number <BLOCK_NUMBER>` is optional and specifies the block number with respect to which the proof is fetched. If unspecified, it defaults to the current block number.
 - `    --root-name <ROOT_NAME>` is optional and specifies the name of the retrieved trie root in the Toml output. If unspecified, it defaults to `state_root` or `storage_root`.
-- `    --proof-name` is optional and specifies the name of the retrieved trie proof in the Toml output. If unspecified, it defaults to `state_proof` or `storage_proof`.
+- `    --proof-name <PROOF_NAME>` is optional and specifies the name of the retrieved trie proof in the Toml output. If unspecified, it defaults to `state_proof` or `storage_proof`.
 
 The following are the subcommands together with their arguments:
 - `state-proof` fetches a state proof, processes it and prints it in Toml format.
