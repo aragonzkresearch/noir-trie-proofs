@@ -66,7 +66,7 @@ pub fn data_len<N>(arr: [u8; N], lenlen: Field) -> Field
     // Restrict loop to maximum length in bytes
     let loop_len_pred = ((MAX_LEN_IN_BYTES as u32) < (arr.len() as u32 - 1)) as Field;
     let loop_len = loop_len_pred*(MAX_LEN_IN_BYTES - (arr.len() - 1)) + arr.len() - 1;
-    
+
     for i in 0..loop_len
     {
 	    let len_len_pred = (((i as u32) < (lenlen as u32)) as Field);
@@ -317,7 +317,7 @@ fn rlp_length_check()
 }
 
 // Function for selecting M elements of an array starting at index n
-fn take_dot_drop<T, N, M>(arr: [T; N], n: Field) -> [T; M] // = drop n . take M
+pub fn take_dot_drop<T, N, M>(arr: [T; N], n: Field) -> [T; M] // = drop n . take M
 {
     let mut out = [dep::std::unsafe::zeroed(); M];
 
