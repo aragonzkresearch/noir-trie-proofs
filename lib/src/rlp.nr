@@ -22,7 +22,7 @@ struct RLP_Header
 impl RLP_Header
 {
     /// RLP header constructor
-    fn new(offset: Field, length: Field, data_type: Field) -> Self
+    pub fn new(offset: Field, length: Field, data_type: Field) -> Self
     {
 	    RLP_Header {offset, length, data_type}
     }
@@ -46,7 +46,7 @@ impl<NUM_FIELDS> RLP_List<NUM_FIELDS>
 {
     /// RLP table constructor taking offsets, lengths, data types and number of
     /// fields as arguments
-    fn new(offset: [Field; NUM_FIELDS], length: [Field; NUM_FIELDS], data_type: [Field; NUM_FIELDS], num_fields: Field) -> Self
+    pub fn new(offset: [Field; NUM_FIELDS], length: [Field; NUM_FIELDS], data_type: [Field; NUM_FIELDS], num_fields: Field) -> Self
     {
 	    RLP_List {offset, length, data_type, num_fields}
     }
@@ -58,7 +58,7 @@ impl<NUM_FIELDS> RLP_List<NUM_FIELDS>
 /// # Arguments
 /// * `arr` - RLP-encoded list
 /// * `lenlen` - Number of bytes containing the length of the payload
-fn data_len<N>(arr: [u8; N], lenlen: Field) -> Field
+pub fn data_len<N>(arr: [u8; N], lenlen: Field) -> Field
 {
     assert((lenlen as u32) <= (MAX_LEN_IN_BYTES as u32)); // Byte length of length of payload must not exceed MAX_LEN_IN_BYTES
     let mut out = 0;
@@ -80,7 +80,7 @@ fn data_len<N>(arr: [u8; N], lenlen: Field) -> Field
 ///
 /// # Arguments
 /// * `arr` - RLP-encoded byte array
-fn decode_len<N>(arr: [u8; N]) -> RLP_Header
+pub fn decode_len<N>(arr: [u8; N]) -> RLP_Header
 {
     let prefix = arr[0];
 
@@ -127,7 +127,7 @@ fn decode_len<N>(arr: [u8; N]) -> RLP_Header
 ///
 /// # Arguments
 /// * `input` - RLP-encoded string
-fn decode0<N>(input: [u8; N])
+pub fn decode0<N>(input: [u8; N])
 			              -> (Field, Field)
 {
     let mut RLP_Header {offset, length, data_type} = decode_len(input); // Read RLP header of input
@@ -149,7 +149,7 @@ fn decode0<N>(input: [u8; N])
 /// # Quirks
 /// * For string elements, the offset points to the payload, whereas the offset
 ///   of a list element points to the RLP header of that element.
-fn decode1<N, NUM_FIELDS>(input: [u8; N])
+pub fn decode1<N, NUM_FIELDS>(input: [u8; N])
 			              -> RLP_List<NUM_FIELDS>
 {
     let mut num_fields: Field = 0; // Number of fields
@@ -195,7 +195,7 @@ fn decode1<N, NUM_FIELDS>(input: [u8; N])
 ///
 /// # Arguments
 /// * `input` - RLP-encoded list
-fn decode1_small_lis<N, NUM_FIELDS>(input: [u8; N])
+pub fn decode1_small_lis<N, NUM_FIELDS>(input: [u8; N])
 			              -> RLP_List<NUM_FIELDS>
 {
     let mut num_fields: Field = 0; // Number of fields
