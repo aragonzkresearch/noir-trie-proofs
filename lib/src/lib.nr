@@ -482,7 +482,7 @@ fn resolve2<N, NUM_FIELDS, MAX_VALUE_LEN>(
 ///
 /// # Arguments
 /// * `in_value` - Byte array representing a number in big-endian form.
-fn byte_value<N>(in_value: [u8; N]) -> ([u8; N], Field)
+pub fn byte_value<N>(in_value: [u8; N]) -> ([u8; N], Field)
 {
     let mut value_length = 0;
 
