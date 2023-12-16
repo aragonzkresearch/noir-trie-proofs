@@ -314,7 +314,7 @@ pub fn compact_decode<MAX_ENC_LEN, NIB_LEN>(input: [u8; MAX_ENC_LEN], length: Fi
 /// * `key` - Array containing the nibbles to be resolved
 /// * `key_ptr` - Pointer to the nibbles in `key` to be resolved
 /// * `node` - RLP-encoded byte array of branch or extension node
-fn resolve_nibble32<N>(
+pub fn resolve_nibble32<N>(
     key: [u4; NIBBLE_LENGTH],
     mut key_ptr: Field,
     node: [u8; N]) ->
