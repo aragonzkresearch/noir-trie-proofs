@@ -1,4 +1,5 @@
 /// RLP decoding library
+use dep::std::wrapping_sub;
 
 /// Max number of bytes required to represent length of a string or list
 // TODO: Incorporate as comptime Field function parameter whenever this is possible
@@ -97,15 +98,15 @@ pub fn decode_len<N>(arr: [u8; N]) -> RLP_Header {
             1,
             strict_if(
                 prefix_p3,
-                (1 + prefix - 0xb7) as Field,
-                strict_if(prefix_p4, 1, (1 + prefix - 0xf7) as Field)
+                wrapping_sub(1 + prefix, 0xb7) as Field,
+                strict_if(prefix_p4, 1, wrapping_sub(1 + prefix, 0xf7) as Field)
             )
         )
     );
 
     // To compute length, first determine how many of the following bytes contain the length of the payload.
-    let lenlen = prefix_p3 as Field * (1 - prefix_p2 as Field) * (prefix - 0xb7) as Field
-        + (1 - prefix_p4 as Field) * (prefix - 0xf7) as Field;
+    let lenlen = prefix_p3 as Field * (1 - prefix_p2 as Field) * wrapping_sub(prefix, 0xb7) as Field
+        + (1 - prefix_p4 as Field) * wrapping_sub(prefix, 0xf7) as Field;
 
     // Set length according to whether it is contained in the prefix (i.e. lenlen == 0).
     let len = strict_if(
@@ -113,7 +114,11 @@ pub fn decode_len<N>(arr: [u8; N]) -> RLP_Header {
         strict_if(
             prefix_p1,
             1,
-            strict_if(prefix_p2, (prefix - 0x80) as Field, (prefix - 0xc0) as Field)
+            strict_if(
+                prefix_p2,
+                (prefix - 0x80) as Field,
+                wrapping_sub(prefix, 0xc0) as Field
+            )
         ),
         data_len(arr, lenlen)
     );
@@ -218,7 +223,7 @@ pub fn decode1_small_lis<N, NUM_FIELDS>(input: [u8; N]) -> RLP_List<NUM_FIELDS> 
         let field_off = 1 - single_byte_p; // If `header` < 0x80, then we are dealing with a single byte whose value
         // is given by header. Else, the string begins at the following index.
 
-        let field_len = single_byte_p * 1 + (1 - single_byte_p) * ((header - 0x80) as Field); // Single byte means len = 1,
+        let field_len = single_byte_p * 1 + (1 - single_byte_p) * (wrapping_sub(header, 0x80) as Field); // Single byte means len = 1,
         // else subtract 0x80 from the header to determine len.
 
         let total_field_len = field_off + field_len; // Length of field + header
