@@ -170,14 +170,14 @@ On M2 Macbook Air, using Nargo v0.21.0 paired with the default proving backend:
 Compiling takes approximately 2 seconds:
 
 ```
-% time nargo compile --package depth_8_storage_proof                                                                                                                                                                                                                                     /Users/s/Dev/noir-projects/noir-trie-proofs-savio [main]
+% time nargo compile --package depth_8_storage_proof
 nargo compile --package depth_8_storage_proof  1.84s user 0.07s system 99% cpu 1.925 total
 ```
 
 Executing for witness takes approximately 1 second:
 
 ```
-% time nargo execute --package depth_8_storage_proof                                                                                                                                                                                                                                     /Users/s/Dev/noir-projects/noir-trie-proofs-savio [main]
+% time nargo execute --package depth_8_storage_proof
 [depth_8_storage_proof] Circuit witness successfully solved
 nargo execute --package depth_8_storage_proof  1.40s user 0.05s system 140% cpu 1.028 total
 ```
@@ -185,7 +185,7 @@ nargo execute --package depth_8_storage_proof  1.40s user 0.05s system 140% cpu 
 Executing + proving (as `nargo prove` always re-executes for witness) takes approximately 1.5 mins:
 
 ```
-% time nargo prove --package depth_8_storage_proof                                                                                                                                                                                                                                       /Users/s/Dev/noir-projects/noir-trie-proofs-savio [main]
+% time nargo prove --package depth_8_storage_proof
 nargo prove --package depth_8_storage_proof  408.52s user 18.15s system 548% cpu 1:17.81 total
 ```
 
