@@ -116,7 +116,7 @@ pub fn decode_len<N>(arr: [u8; N]) -> RLP_Header {
             1,
             strict_if(
                 prefix_p2,
-                (prefix - 0x80) as Field,
+                wrapping_sub(prefix, 0x80) as Field,
                 wrapping_sub(prefix, 0xc0) as Field
             )
         ),
