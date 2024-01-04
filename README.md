@@ -148,3 +148,45 @@ To run the integration tests, you can execute against various projects in `tests
 - `nargo execute --package depth_8_storage_proof`
 - `nargo execute --package one_level`
 - `nargo execute --package rlp_decode`
+
+## Benchmarks
+
+### depth_8_storage_proof
+
+As of Noir v0.21.0 paired with the default proving backend, circuit size of the depth_8_storage_proof test program is:
+
+```
++-----------------------+------------------------+--------------+----------------------+
+| Package               | Language               | ACIR Opcodes | Backend Circuit Size |
++-----------------------+------------------------+--------------+----------------------+
+| depth_8_storage_proof | PLONKCSat { width: 3 } | 51563        | 1687738              |
++-----------------------+------------------------+--------------+----------------------+
+```
+
+#### CLI
+
+On M2 Macbook Air, using Nargo v0.21.0 paired with the default proving backend:
+
+Compiling takes approximately 2 seconds:
+
+```
+% time nargo compile --package depth_8_storage_proof
+nargo compile --package depth_8_storage_proof  1.84s user 0.07s system 99% cpu 1.925 total
+```
+
+Executing for witness takes approximately 1 second:
+
+```
+% time nargo execute --package depth_8_storage_proof
+[depth_8_storage_proof] Circuit witness successfully solved
+nargo execute --package depth_8_storage_proof  1.40s user 0.05s system 140% cpu 1.028 total
+```
+
+Executing + proving (as `nargo prove` always re-executes for witness) takes approximately 1.5 mins:
+
+```
+% time nargo prove --package depth_8_storage_proof
+nargo prove --package depth_8_storage_proof  408.52s user 18.15s system 548% cpu 1:17.81 total
+```
+
+NOTE: Running `nargo prove` the first time / before `nargo compile` would automatically include program compilation. Subsequent runs without program modifications would make use of the cached artifacts and provide more representative benchmarking results.

@@ -2,7 +2,7 @@
 name = "depth_8_storage_proof"
 type = "bin"
 authors = [""]
-compiler_version = "0.10.0"
+compiler_version = ">=0.19.0"
 
 [dependencies]
 trie = { path = "../../lib" }
