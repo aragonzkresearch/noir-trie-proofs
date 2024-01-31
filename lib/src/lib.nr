@@ -242,6 +242,24 @@ pub fn verify_node_hash<N>(node: [u8; N], hash: [u8; KEY_LENGTH])
 }
 
 
+/// Unconstrained version of `key_as_nibbles`.
+/// It's cheaper to do division here and verify it's results in constrained code.
+///
+/// # Arguments
+/// * `key` - Array of bytes representing a key
+unconstrained fn key_as_nibbles_unconstrained<KEY_LEN, NIB_LEN>(key: [u8; KEY_LEN]) -> [u4; NIB_LEN]
+{
+    let mut nibkey = [0; NIB_LEN];
+
+    for i in 0..KEY_LEN
+    {
+        nibkey[2 * i + 1] = (key[i] & 0x0f) as u4;
+        nibkey[2 * i] = ((key[i] & 0xf0) >> 4) as u4;
+    }
+
+    nibkey
+}
+
 /// Key-to-nibble converter. Returns an array (twice the length of the input array)
 /// of 4-bit elements representing the nibbles of the input array.
 ///
@@ -249,16 +267,15 @@ pub fn verify_node_hash<N>(node: [u8; N], hash: [u8; KEY_LENGTH])
 /// * `key` - Array of bytes representing a key
 pub fn key_as_nibbles<KEY_LEN, NIB_LEN>(key: [u8; KEY_LEN]) -> [u4; NIB_LEN]
 {
-    assert(NIB_LEN == 2*KEY_LEN);
-    
-    let mut nibkey = [0; NIB_LEN];
-    
+    assert(NIB_LEN == 2 * KEY_LEN);
+
+    let nibkey: [u4; NIB_LEN] = key_as_nibbles_unconstrained(key);
+
     for i in 0..KEY_LEN
     {
-	    nibkey[2*i + 1] = (key[i] & 0x0f) as u4;
-	    nibkey[2*i] = ((key[i] - nibkey[2*i + 1] as u8) >> 4) as u4;
+        assert((nibkey[2 * i] as u8) << 4 + (nibkey[2 * i + 1] as u8) == key[i]);
     }
-    
+
     nibkey
 }
 
