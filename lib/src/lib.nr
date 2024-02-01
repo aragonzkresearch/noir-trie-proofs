@@ -247,7 +247,7 @@ pub fn verify_node_hash<N>(node: [u8; N], hash: [u8; KEY_LENGTH])
 /// * `b` - Byte
 pub fn byte_to_nibbles(b: u8) -> (u4, u4)
 {
-    (b as u4, (b >> 4) as u4)
+    ((b >> 4) as u4, b as u4)
 }
 
 /// Key-to-nibble converter. Returns an array (twice the length of the input array)
