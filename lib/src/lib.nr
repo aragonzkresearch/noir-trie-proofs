@@ -241,6 +241,14 @@ pub fn verify_node_hash<N>(node: [u8; N], hash: [u8; KEY_LENGTH])
 	node_hash == hash
 }
 
+/// Byte-to-nibble converter. Returns a pair of two nibbles.
+///
+/// # Arguments
+/// * `b` - Byte
+pub fn byte_to_nibbles(b: u8) -> (u4, u4)
+{
+    (b as u4, (b >> 4) as u4)
+}
 
 /// Key-to-nibble converter. Returns an array (twice the length of the input array)
 /// of 4-bit elements representing the nibbles of the input array.
@@ -255,8 +263,10 @@ pub fn key_as_nibbles<KEY_LEN, NIB_LEN>(key: [u8; KEY_LEN]) -> [u4; NIB_LEN]
     
     for i in 0..KEY_LEN
     {
-	    nibkey[2*i + 1] = (key[i] & 0x0f) as u4;
-	    nibkey[2*i] = ((key[i] - nibkey[2*i + 1] as u8) >> 4) as u4;
+        let nibs = byte_to_nibbles(key[i]);
+
+        nibkey[2*i] = nibs.0;
+        nibkey[2*i + 1] = nibs.1;
     }
     
     nibkey
@@ -276,7 +286,7 @@ pub fn compact_decode<MAX_ENC_LEN, NIB_LEN>(input: [u8; MAX_ENC_LEN], length: Fi
     let mut nibble = [0 as u4; NIB_LEN];
     let mut out_length = 0;
 
-	let mut prev_nibbles = ((input[0] >> 4) as u4, (input[0] & 0x0f) as u4);
+	let mut prev_nibbles = byte_to_nibbles(input[0]);
     let mut cur_nibbles = (0,0);
     
     let first_nibble = prev_nibbles.0;
@@ -291,7 +301,7 @@ pub fn compact_decode<MAX_ENC_LEN, NIB_LEN>(input: [u8; MAX_ENC_LEN], length: Fi
     for i in 0..(MAX_ENC_LEN - 1)
     {
         let x = input[i + 1];
-        cur_nibbles = ((x >> 4) as u4, (x & 0x0f) as u4); // x decomposed into two nibbles
+        cur_nibbles = byte_to_nibbles(x); // x decomposed into two nibbles
 
         nibble[2*i] = (parity as u4)*prev_nibbles.1 + (1 - (parity as u4))*cur_nibbles.0;
         nibble[2*i + 1] = (parity as u4)*cur_nibbles.0 + (1 - (parity as u4))*cur_nibbles.1;
@@ -469,7 +479,7 @@ fn resolve2<N, NUM_FIELDS, MAX_VALUE_LEN>(
 
     // Ensure we've followed the right kind of node, i.e. if we're not at the end of the key,
     // we should have followed an extension node, and if we are, then we should have followed a leaf node.
-    let node_type_nibble = (first_slot[0] >> 4);
+    let node_type_nibble = first_slot[0] >> 4;
 
     assert(if node_type == LEAF { (node_type_nibble as u4) > 1 } else { (node_type == EXTENSION) & ((node_type_nibble as u4) <= 1) }); // Must have resolved a leaf or extension node.
     
