@@ -83,9 +83,9 @@ impl<PROOF_LEN, MAX_VALUE_LEN> TrieProof<32, PROOF_LEN, MAX_VALUE_LEN>
 
         for i in 0..(path.len()/MAX_TRIE_NODE_LENGTH - 1)
         {
-            let range_p = (i as u8) < (depth - 1) as u8; // Range predicate
+            let in_range = (i as u8) < (depth - 1) as u8; // Range indicator
             
-            let k = if (range_p) {i} else {0}; // Restrict index to range {0, ..., depth - 2}
+            let k = if (in_range) {i} else {0}; // Restrict index to range {0, ..., depth - 2}
 
             // Populate node array
 	        for j in 0..MAX_TRIE_NODE_LENGTH
@@ -93,12 +93,12 @@ impl<PROOF_LEN, MAX_VALUE_LEN> TrieProof<32, PROOF_LEN, MAX_VALUE_LEN>
 		        node[j] = path[j + k*MAX_TRIE_NODE_LENGTH];
 	        }
 
-            assert(!range_p | verify_node_hash(node, extracted_hash)); // If within range, node hash should match the hash extracted from the preceding node.
+            assert(!in_range | verify_node_hash(node, extracted_hash)); // If within range, node hash should match the hash extracted from the preceding node.
             
             // Extract hash and advance key pointer if within range
-            let lookup: ([u8; 32], Field) = resolve_nibble32(key_nibbles, if range_p {key_ptr} else {0}, node); // Resolve next nibble(s)
-            extracted_hash = if range_p {lookup.0} else {extracted_hash};
-            key_ptr = if range_p {lookup.1} else {key_ptr};
+            let lookup: ([u8; 32], Field) = resolve_nibble32(key_nibbles, if in_range {key_ptr} else {0}, node); // Resolve next nibble(s)
+            extracted_hash = if in_range {lookup.0} else {extracted_hash};
+            key_ptr = if in_range {lookup.1} else {key_ptr};
         }
         
         // Treat final node as the preceding nodes...
@@ -167,9 +167,9 @@ impl<PROOF_LEN, MAX_VALUE_LEN> TrieProof<20, PROOF_LEN, MAX_VALUE_LEN>
 
         for i in 0..(path.len()/MAX_TRIE_NODE_LENGTH - 1)
         {
-            let range_p = (i as u8) < (depth - 1) as u8; // Range predicate
+            let in_range = (i as u8) < (depth - 1) as u8; // Range indicator
             
-            let k = if (range_p) {i} else {0}; // Restrict index to range {0, ..., depth - 2}
+            let k = if (in_range) {i} else {0}; // Restrict index to range {0, ..., depth - 2}
 
             // Populate node array
 	        for j in 0..MAX_TRIE_NODE_LENGTH
@@ -177,12 +177,12 @@ impl<PROOF_LEN, MAX_VALUE_LEN> TrieProof<20, PROOF_LEN, MAX_VALUE_LEN>
 		        node[j] = path[j + k*MAX_TRIE_NODE_LENGTH];
 	        }
 
-            assert(!range_p | verify_node_hash(node, extracted_hash)); // If within range, node hash should match the hash extracted from the preceding node.
+            assert(!in_range | verify_node_hash(node, extracted_hash)); // If within range, node hash should match the hash extracted from the preceding node.
             
             // Extract hash and advance key pointer if within range
-            let lookup: ([u8; KEY_LENGTH], Field) = resolve_nibble32(key_nibbles, if range_p {key_ptr} else {0}, node); // Resolve next nibble(s)
-            extracted_hash = if range_p {lookup.0} else {extracted_hash};
-            key_ptr = if range_p {lookup.1} else {key_ptr};
+            let lookup: ([u8; KEY_LENGTH], Field) = resolve_nibble32(key_nibbles, if in_range {key_ptr} else {0}, node); // Resolve next nibble(s)
+            extracted_hash = if in_range {lookup.0} else {extracted_hash};
+            key_ptr = if in_range {lookup.1} else {key_ptr};
         }
         
         // Treat final node as the preceding nodes...
@@ -231,8 +231,8 @@ pub fn verify_node_hash<N>(node: [u8; N], hash: [u8; KEY_LENGTH])
     let node_length = { let rlp_header = rlp::decode_len(node); rlp_header.offset + rlp_header.length }; // Determine length of node
 
     // Extra safety
-    let range_p = ((node_length as u32) > (node.len() as u32)) as Field;
-    let safe_length = range_p*node.len() + (1-range_p)*node_length;
+    let in_range = ((node_length as u32) > (node.len() as u32)) as Field;
+    let safe_length = in_range*node.len() + (1-in_range)*node_length;
     
     // Compute Keccak256 hash of node
 	let node_hash = keccak256(node, safe_length as u32);
@@ -498,9 +498,9 @@ pub fn byte_value<N>(in_value: [u8; N]) -> ([u8; N], Field)
 
     for i in 0..N
     {
-        let num_bytes_p = (value_length == 0) as Field;
-        let byte_p = (in_value[i] != 0) as Field;
-        value_length = num_bytes_p*byte_p*(N - i) + (1-num_bytes_p)*value_length;
+        let num_bytes_ind = (value_length == 0) as Field;
+        let byte_ind = (in_value[i] != 0) as Field;
+        value_length = num_bytes_ind*byte_ind*(N - i) + (1-num_bytes_ind)*value_length;
     }
 
     let value = left_byte_shift(in_value, N - value_length);
@@ -524,8 +524,8 @@ fn left_byte_shift<N>(input: [u8; N], n: Field) -> [u8; N]
     for i in 0..N
     {
         // Restrict indices to be shifted, i.e. ∀i: i+n < N, out[i] ← input[i+n].
-        let index_p = (((i+n) as u32) < (N as u32)) as Field;
-        out[i] = (index_p as u8)*input[index_p*(i+n)];
+        let index_ind = (((i+n) as u32) < (N as u32)) as Field;
+        out[i] = (index_ind as u8)*input[index_ind*(i+n)];
     }
 
     out

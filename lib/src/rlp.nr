@@ -64,12 +64,12 @@ pub fn data_len<N>(arr: [u8; N], lenlen: Field) -> Field {
     let mut out = 0;
 
     // Restrict loop to maximum length in bytes
-    let loop_len_pred = ((MAX_LEN_IN_BYTES as u32) < (arr.len() as u32 - 1)) as Field;
-    let loop_len = loop_len_pred * (MAX_LEN_IN_BYTES - (arr.len() - 1)) + arr.len() - 1;
+    let loop_len_ind = ((MAX_LEN_IN_BYTES as u32) < (arr.len() as u32 - 1)) as Field;
+    let loop_len = loop_len_ind * (MAX_LEN_IN_BYTES - (arr.len() - 1)) + arr.len() - 1;
 
     for i in 0..loop_len {
-        let len_len_pred = (((i as u32) < (lenlen as u32)) as Field);
-        out = len_len_pred*(256*out + (arr[i + 1] as Field)) + (1-len_len_pred)*out;
+        let len_len_ind = (((i as u32) < (lenlen as u32)) as Field);
+        out = len_len_ind*(256*out + (arr[i + 1] as Field)) + (1-len_len_ind)*out;
     }
 
     out
@@ -82,40 +82,40 @@ pub fn data_len<N>(arr: [u8; N], lenlen: Field) -> Field {
 pub fn decode_len<N>(arr: [u8; N]) -> RLP_Header {
     let prefix = arr[0];
 
-    // Prefix range predicates
-    let prefix_p1 = (prefix < 0x80); // Single byte
-    let prefix_p2 = (prefix < 0xb8); // 0-55 byte string
-    let prefix_p3 = (prefix < 0xc0); // >55-byte string
-    let prefix_p4 = (prefix < 0xf8); // 0-55 byte list
+    // Prefix range indicators
+    let prefix_ind1 = (prefix < 0x80); // Single byte
+    let prefix_ind2 = (prefix < 0xb8); // 0-55 byte string
+    let prefix_ind3 = (prefix < 0xc0); // >55-byte string
+    let prefix_ind4 = (prefix < 0xf8); // 0-55 byte list
     // Else >55-byte list
 
     // Compute offset of payload
     let offset = strict_if(
-        prefix_p1,
+        prefix_ind1,
         0,
         strict_if(
-            prefix_p2,
+            prefix_ind2,
             1,
             strict_if(
-                prefix_p3,
+                prefix_ind3,
                 wrapping_sub(1 + prefix, 0xb7) as Field,
-                strict_if(prefix_p4, 1, wrapping_sub(1 + prefix, 0xf7) as Field)
+                strict_if(prefix_ind4, 1, wrapping_sub(1 + prefix, 0xf7) as Field)
             )
         )
     );
 
     // To compute length, first determine how many of the following bytes contain the length of the payload.
-    let lenlen = prefix_p3 as Field * (1 - prefix_p2 as Field) * wrapping_sub(prefix, 0xb7) as Field
-        + (1 - prefix_p4 as Field) * wrapping_sub(prefix, 0xf7) as Field;
+    let lenlen = prefix_ind3 as Field * (1 - prefix_ind2 as Field) * wrapping_sub(prefix, 0xb7) as Field
+        + (1 - prefix_ind4 as Field) * wrapping_sub(prefix, 0xf7) as Field;
 
     // Set length according to whether it is contained in the prefix (i.e. lenlen == 0).
     let len = strict_if(
         lenlen == 0,
         strict_if(
-            prefix_p1,
+            prefix_ind1,
             1,
             strict_if(
-                prefix_p2,
+                prefix_ind2,
                 wrapping_sub(prefix, 0x80) as Field,
                 wrapping_sub(prefix, 0xc0) as Field
             )
@@ -169,21 +169,21 @@ pub fn decode1<N, NUM_FIELDS>(input: [u8; N]) -> RLP_List<NUM_FIELDS> {
 
     // Process each element of the list
     for i in 0..NUM_FIELDS {
-        let loop_p = (offset != total_len) as Field; // Loop predicate: Take action only if there is data left to parse.
+        let loop_ind = (offset != total_len) as Field; // Loop indicator: Take action only if there is data left to parse.
 
         // Make sure the index doesn't overshoot
         let header: [u8; MAX_LEN_IN_BYTES + 1] = take_dot_drop(input, offset); // Read element header
         let RLP_Header {offset: field_off, length: field_len, data_type: field_type} = decode_len(header); // Decode length of element
         let total_field_len = field_off + field_len; // Length of element + header
 
-        // Assign decoded data and set them to 0 if loop predicate false (Convenient for testing; could remove this later)
-        dec_off[i] = loop_p*(offset + (1-field_type)*field_off); // If the ith slot contains a list, include its RLP header.
-        dec_len[i] = loop_p*(field_len + field_type*field_off); // If the ith slot contains a list, make sure to include the length of its header in the decoded data.
-        dec_type[i] = loop_p*(field_type);
+        // Assign decoded data and set them to 0 if loop indicator false (Convenient for testing; could remove this later)
+        dec_off[i] = loop_ind*(offset + (1-field_type)*field_off); // If the ith slot contains a list, include its RLP header.
+        dec_len[i] = loop_ind*(field_len + field_type*field_off); // If the ith slot contains a list, make sure to include the length of its header in the decoded data.
+        dec_type[i] = loop_ind*(field_type);
 
         // Calculate new offset
-        offset += loop_p*total_field_len;
-        num_fields += loop_p;
+        offset += loop_ind*total_field_len;
+        num_fields += loop_ind;
     }
 
     assert(total_len == offset); // Data must have been exhausted, else there are more fields than expected.
@@ -210,7 +210,7 @@ pub fn decode1_small_lis<N, NUM_FIELDS>(input: [u8; N]) -> RLP_List<NUM_FIELDS> 
 
     // Fill up the NUM_FIELDS fields
     for i in 0..NUM_FIELDS {
-        let loop_p = (offset != total_len) as Field; // Loop predicate: Take action only if there is data left to parse.
+        let loop_ind = (offset != total_len) as Field; // Loop indicator: Take action only if there is data left to parse.
 
         let header = input[offset]; // Read field header
 
@@ -218,24 +218,24 @@ pub fn decode1_small_lis<N, NUM_FIELDS>(input: [u8; N]) -> RLP_List<NUM_FIELDS> 
 
         let field_type = STRING; // Always dealing with strings here
 
-        let single_byte_p = (header < 0x80) as Field; // 1 if `header` represents a single byte.
+        let single_byte_ind = (header < 0x80) as Field; // 1 if `header` represents a single byte.
 
-        let field_off = 1 - single_byte_p; // If `header` < 0x80, then we are dealing with a single byte whose value
+        let field_off = 1 - single_byte_ind; // If `header` < 0x80, then we are dealing with a single byte whose value
         // is given by header. Else, the string begins at the following index.
 
-        let field_len = single_byte_p * 1 + (1 - single_byte_p) * (wrapping_sub(header, 0x80) as Field); // Single byte means len = 1,
+        let field_len = single_byte_ind * 1 + (1 - single_byte_ind) * (wrapping_sub(header, 0x80) as Field); // Single byte means len = 1,
         // else subtract 0x80 from the header to determine len.
 
         let total_field_len = field_off + field_len; // Length of field + header
 
-        // Assign decoded data and set them to 0 if loop predicate false (Convenient for testing; could remove this later)
-        dec_off[i] = loop_p*(offset + field_off);
-        dec_len[i] = loop_p*(field_len);
-        dec_type[i] = loop_p*(field_type);
+        // Assign decoded data and set them to 0 if loop indicator false (Convenient for testing; could remove this later)
+        dec_off[i] = loop_ind*(offset + field_off);
+        dec_len[i] = loop_ind*(field_len);
+        dec_type[i] = loop_ind*(field_type);
 
         // Calculate new offset
-        offset += loop_p*total_field_len;
-        num_fields += loop_p;
+        offset += loop_ind*total_field_len;
+        num_fields += loop_ind;
     }
 
     // Ensure that we have exhausted the data
