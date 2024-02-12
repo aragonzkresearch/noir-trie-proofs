@@ -67,7 +67,7 @@ impl<PROOF_LEN, MAX_VALUE_LEN> TrieProof<32, PROOF_LEN, MAX_VALUE_LEN>
 
         let key = keccak256(self.key, 32); // The path is traced out by the hashed key
         
-        let key_nibbles: [u4; NIBBLE_LENGTH] = key_as_nibbles(key);
+        let key_nibbles: [u8; NIBBLE_LENGTH] = key_as_nibbles(key);
         
         let mut key_ptr = 0;
 
@@ -151,7 +151,7 @@ impl<PROOF_LEN, MAX_VALUE_LEN> TrieProof<20, PROOF_LEN, MAX_VALUE_LEN>
 
         let key = keccak256(self.key, 20); // The path is traced out by the hashed key
         
-        let key_nibbles: [u4; NIBBLE_LENGTH] = key_as_nibbles(key);
+        let key_nibbles: [u8; NIBBLE_LENGTH] = key_as_nibbles(key);
         
         let mut key_ptr = 0;
 
@@ -245,9 +245,12 @@ pub fn verify_node_hash<N>(node: [u8; N], hash: [u8; KEY_LENGTH])
 ///
 /// # Arguments
 /// * `b` - Byte
-pub fn byte_to_nibbles(b: u8) -> (u4, u4)
+pub fn byte_to_nibbles(b: u8) -> (u8, u8)
 {
-    ((b >> 4) as u4, b as u4)
+    let upper = b >> 4;
+    let lower = b - 16*upper;
+
+    (upper, lower)
 }
 
 /// Key-to-nibble converter. Returns an array (twice the length of the input array)
@@ -255,7 +258,7 @@ pub fn byte_to_nibbles(b: u8) -> (u4, u4)
 ///
 /// # Arguments
 /// * `key` - Array of bytes representing a key
-pub fn key_as_nibbles<KEY_LEN, NIB_LEN>(key: [u8; KEY_LEN]) -> [u4; NIB_LEN]
+pub fn key_as_nibbles<KEY_LEN, NIB_LEN>(key: [u8; KEY_LEN]) -> [u8; NIB_LEN]
 {
     assert(NIB_LEN == 2*KEY_LEN);
     
@@ -278,12 +281,12 @@ pub fn key_as_nibbles<KEY_LEN, NIB_LEN>(key: [u8; KEY_LEN]) -> [u4; NIB_LEN]
 /// # Arguments
 /// * `input`: The first field of a leaf/extension node as a (right-padded) byte array
 /// * `length`: The actual length of the data in `input`
-pub fn compact_decode<MAX_ENC_LEN, NIB_LEN>(input: [u8; MAX_ENC_LEN], length: Field) -> ([u4; NIB_LEN], Field)
+pub fn compact_decode<MAX_ENC_LEN, NIB_LEN>(input: [u8; MAX_ENC_LEN], length: Field) -> ([u8; NIB_LEN], Field)
 {
 
     assert((2 as u32)*(MAX_ENC_LEN as u32) <= ((NIB_LEN + 2) as u32)); // MAX_ENC_LEN should be NIB_LEN/2 or NIB_LEN/2 + 1. TODO
     
-    let mut nibble = [0 as u4; NIB_LEN];
+    let mut nibble = [0 as u8; NIB_LEN];
     let mut out_length = 0;
 
 	let mut prev_nibbles = byte_to_nibbles(input[0]);
@@ -296,15 +299,15 @@ pub fn compact_decode<MAX_ENC_LEN, NIB_LEN>(input: [u8; MAX_ENC_LEN], length: Fi
     // The first nibble should always be less than 4.
     assert(first_nibble < 4);
     // Parity consistency: If we are dealing with an even number of nibbles, then the second nibble should be 0.
-    assert(((1-parity) as u4)*prev_nibbles.1 == 0);
+    assert(((1-parity) as u8)*prev_nibbles.1 == 0);
 
     for i in 0..(MAX_ENC_LEN - 1)
     {
         let x = input[i + 1];
         cur_nibbles = byte_to_nibbles(x); // x decomposed into two nibbles
 
-        nibble[2*i] = (parity as u4)*prev_nibbles.1 + (1 - (parity as u4))*cur_nibbles.0;
-        nibble[2*i + 1] = (parity as u4)*cur_nibbles.0 + (1 - (parity as u4))*cur_nibbles.1;
+        nibble[2*i] = (parity as u8)*prev_nibbles.1 + (1 - (parity as u8))*cur_nibbles.0;
+        nibble[2*i + 1] = (parity as u8)*cur_nibbles.0 + (1 - (parity as u8))*cur_nibbles.1;
 
         prev_nibbles = cur_nibbles;
     }
@@ -325,7 +328,7 @@ pub fn compact_decode<MAX_ENC_LEN, NIB_LEN>(input: [u8; MAX_ENC_LEN], length: Fi
 /// * `key_ptr` - Pointer to the nibbles in `key` to be resolved
 /// * `node` - RLP-encoded byte array of branch or extension node
 pub fn resolve_nibble32<N>(
-    key: [u4; NIBBLE_LENGTH],
+    key: [u8; NIBBLE_LENGTH],
     mut key_ptr: Field,
     node: [u8; N]) ->
     ([u8; KEY_LENGTH], // Extracted hash
@@ -376,7 +379,7 @@ pub fn resolve_nibble32<N>(
 fn resolve17<N, NUM_FIELDS>(
     node: [u8; N],
     rlp_list: rlp::RLP_List<NUM_FIELDS>,
-    key: [u4; NIBBLE_LENGTH],
+    key: [u8; NIBBLE_LENGTH],
     mut key_ptr: Field)
     -> (
     [u8; KEY_LENGTH], // Extracted hash
@@ -432,7 +435,7 @@ fn resolve2<N, NUM_FIELDS, MAX_VALUE_LEN>(
     node_type: Field,
     node: [u8; N],
     rlp_list: rlp::RLP_List<NUM_FIELDS>,
-    key: [u4; NIBBLE_LENGTH],
+    key: [u8; NIBBLE_LENGTH],
     mut key_ptr: Field)
     -> (
     [u8; MAX_VALUE_LEN], // Extracted value
@@ -446,7 +449,7 @@ fn resolve2<N, NUM_FIELDS, MAX_VALUE_LEN>(
     
     let first_slot: [u8; 1 + NIBBLE_LENGTH/2] = rlp::take_dot_drop(node,rlp_list.offset[0]); // TODO: Replace consts with numeric generics when it is possible to use them in array length expressions
     
-	let (nib, niblen): ([u4; NIBBLE_LENGTH], Field) = compact_decode(first_slot, rlp_list.length[0]);
+	let (nib, niblen): ([u8; NIBBLE_LENGTH], Field) = compact_decode(first_slot, rlp_list.length[0]);
 
     // Length checks.
     // Should not go past 64 nibbles.
@@ -481,7 +484,7 @@ fn resolve2<N, NUM_FIELDS, MAX_VALUE_LEN>(
     // we should have followed an extension node, and if we are, then we should have followed a leaf node.
     let node_type_nibble = first_slot[0] >> 4;
 
-    assert(if node_type == LEAF { (node_type_nibble as u4) > 1 } else { (node_type == EXTENSION) & ((node_type_nibble as u4) <= 1) }); // Must have resolved a leaf or extension node.
+    assert(if node_type == LEAF { (node_type_nibble as u8) > 1 } else { (node_type == EXTENSION) & ((node_type_nibble as u8) <= 1) }); // Must have resolved a leaf or extension node.
     
     (value, value_length, key_ptr)
 }
@@ -1424,15 +1427,15 @@ fn nibble_check()
 #[test]
 fn compact_decode_test()
 {
-    let (nibble0, len0): ([u4; NIBBLE_LENGTH], Field) = compact_decode([0x11, 0x23, 0x45,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0], 3);
+    let (nibble0, len0): ([u8; NIBBLE_LENGTH], Field) = compact_decode([0x11, 0x23, 0x45,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0], 3);
     assert(len0 == 5);
     assert([nibble0[0], nibble0[1], nibble0[2], nibble0[3], nibble0[4]] == [1,2,3,4,5]);
 
-    let (nibble1, len1): ([u4; NIBBLE_LENGTH], Field) = compact_decode([0x20, 0x0f, 0x1c, 0xb8, 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0], 4);
+    let (nibble1, len1): ([u8; NIBBLE_LENGTH], Field) = compact_decode([0x20, 0x0f, 0x1c, 0xb8, 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0], 4);
     assert(len1 == 6);
     assert([nibble1[0], nibble1[1], nibble1[2], nibble1[3], nibble1[4], nibble1[5]] == [0,15,1,12,11,8]);
 
-    let (nibble2, len2): ([u4; NIBBLE_LENGTH], Field) = compact_decode([0x3f, 0x1c, 0xb8, 0x99, 0xab, 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0], 3);
+    let (nibble2, len2): ([u8; NIBBLE_LENGTH], Field) = compact_decode([0x3f, 0x1c, 0xb8, 0x99, 0xab, 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0], 3);
     assert(len2 == 5);
     assert([nibble2[0], nibble2[1], nibble2[2], nibble2[3], nibble2[4]] == [15,1,12,11,8]);
     
