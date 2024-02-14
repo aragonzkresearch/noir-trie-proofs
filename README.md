@@ -47,7 +47,7 @@ To streamline RLP decoding, two types are provided:
 - `StateProof<PROOF_LEN>` is a type alias for `TrieProof<20, PROOF_LEN, MAX_ACCOUNT_STATE_LENGTH>`.
 
 #### Methods
-- `fn verify_storage_root(self: TrieProof<32, PROOF_LEN, MAX_VALUE_LEN>, storage_root: [u8; KEY_LENGTH]) -> bool`  takes a storage proof (`self`) and storage root (`storage_root`) as inputs and returns `true` if the proof is successfully verified. `PROOF_LEN` is subject to the restrictions explained above and `MAX_VALUE_LEN <= 32` should be large enough to encapsulate the value that the key resolves to in the proof, which is encoded as a big-endian byte array.
+- `fn verify_storage_root(self: TrieProof<32, PROOF_LEN, MAX_VALUE_LEN>, storage_root: [u8; KEY_LENGTH]) -> bool`  takes a storage proof (`self`) and storage root (`storage_root`) as inputs and returns `true` if the proof is successfully verified. `PROOF_LEN` is subject to the restrictions explained above and `MAX_VALUE_LEN <= 33` should be large enough to encapsulate the RLP-encoded value that the key resolves to in the proof.
 - `fn verify_state_root(self: TrieProof<20, PROOF_LEN, MAX_VALUE_LEN>, state_root: [u8; KEY_LENGTH]) -> bool` takes a state proof (`self`) and state root (`state_root`) as inputs and returns `true` if the proof is successfully verified. `PROOF_LEN` is as before, and `MAX_VALUE_LEN <= MAX_ACCOUNT_STATE_LENGTH` should be large enough to encapsulate the value the key resolves to in the proof, which is the RLP-encoded account state associated with the address given by `self.key`.
 
 #### Examples
@@ -71,11 +71,11 @@ pad xs = concat
     depth_padding = replicate (max_depth - length xs) []
 ```
 
-Moreover, the values that trie proofs terminate in are assumed to be in a byte array left-padded with zeros to the maximum size of the slot they are stored in, i.e. if `max_len` denotes the maximum possible length of a value, then the mapping to be applied is given as follows:
+Moreover, the values that trie proofs terminate in are assumed to be in an RLP-encoded byte array right-padded with zeros to the maximum size of the slot they are stored in, i.e. if `max_len` denotes the maximum possible length of a value, then the mapping to be applied is given as follows:
 
 ```haskell
-left_pad :: [Word8] -> Int -> [Word8]
-left_pad xs max_len = (replicate (max_len - length xs) 0) ++ xs
+right_pad :: [Word8] -> Int -> [Word8]
+right_pad xs max_len = xs ++ (replicate (max_len - length xs) 0)
 ```
 
 ## Rust component
