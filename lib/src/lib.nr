@@ -1,5 +1,6 @@
 /// Ethereum trie proof implementation
 use dep::std::hash::keccak256;
+mod test;
 
 mod rlp; // Module for required RLP encoding/decoding
 
@@ -92,8 +93,8 @@ impl<PROOF_LEN, MAX_VALUE_LEN> TrieProof<32, PROOF_LEN, MAX_VALUE_LEN>
 	        {
 		        node[j] = path[j + k*MAX_TRIE_NODE_LENGTH];
 	        }
-            
-            assert(!in_range | verify_node_hash(node, extracted_hash)); // If within range, node hash should match the hash extracted from the preceding node.
+
+            assert(!in_range | verify_node_hash(node, extracted_hash), "Middle node hash does not match the hash extracted from the preceding node"); // If within range, node hash should match the hash extracted from the preceding node.
             
             // Extract hash and advance key pointer if within range
             let lookup: (u64, [u8; KEY_LENGTH], u64) = resolve_nibble32(key_nibbles, if in_range { key_ptr } else { 0 }, node); // Resolve next nibble(s)
@@ -109,7 +110,7 @@ impl<PROOF_LEN, MAX_VALUE_LEN> TrieProof<32, PROOF_LEN, MAX_VALUE_LEN>
 		    node[j] = path[j + (depth - 1)*MAX_TRIE_NODE_LENGTH];
 	    }
 
-        assert(verify_node_hash(node, extracted_hash));
+        assert(verify_node_hash(node, extracted_hash), "Terminal node hash does not match the hash extracted from the preceding node");
 
         let rlp_list: rlp::RLP_List<2> = rlp::decode1_small_lis(node); // Terminal node must be a 2-node, and both slots contain less than 56 bytes.
         
