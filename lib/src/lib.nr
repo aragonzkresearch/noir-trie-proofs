@@ -3,8 +3,8 @@ use dep::std::hash::keccak256;
 
 mod rlp; // Module for required RLP encoding/decoding
 
-/// 2-node enum
-global EXTENSION: u64 = 0; global LEAF: u64 = 1;
+/// Node type
+global BRANCH: u64 = 2; global EXTENSION: u64 = 0; global LEAF: u64 = 1;
 
 /// Constants for 32-byte long keys; TODO: Omit these when it is possible to replace constants with numeric generics.
 global KEY_LENGTH: u64 = 32; // (fixed) key length in bytes
@@ -92,13 +92,15 @@ impl<PROOF_LEN, MAX_VALUE_LEN> TrieProof<32, PROOF_LEN, MAX_VALUE_LEN>
 	        {
 		        node[j] = path[j + k*MAX_TRIE_NODE_LENGTH];
 	        }
-
+            
             assert(!in_range | verify_node_hash(node, extracted_hash)); // If within range, node hash should match the hash extracted from the preceding node.
             
             // Extract hash and advance key pointer if within range
-            let lookup: ([u8; 32], u64) = resolve_nibble32(key_nibbles, if in_range {key_ptr} else {0}, node); // Resolve next nibble(s)
-            extracted_hash = if in_range {lookup.0} else {extracted_hash};
-            key_ptr = if in_range {lookup.1} else {key_ptr};
+            let lookup: (u64, [u8; KEY_LENGTH], u64) = resolve_nibble32(key_nibbles, if in_range { key_ptr } else { 0 }, node); // Resolve next nibble(s)
+            assert(!in_range | (lookup.0 != LEAF));
+
+            extracted_hash = if in_range {lookup.1} else {extracted_hash};
+            key_ptr = if in_range {lookup.2} else {key_ptr};
         }
         
         // Treat final node as the preceding nodes...
@@ -112,7 +114,8 @@ impl<PROOF_LEN, MAX_VALUE_LEN> TrieProof<32, PROOF_LEN, MAX_VALUE_LEN>
         let rlp_list: rlp::RLP_List<2> = rlp::decode1_small_lis(node); // Terminal node must be a 2-node, and both slots contain less than 56 bytes.
         
         // ...except extract a value rather than a key.
- 	    let (mut extracted_value, extracted_value_length, terminal_key_ptr): ([u8; 33], u64, u64) = resolve2(LEAF, node, rlp_list, key_nibbles, key_ptr);
+ 	    let (node_type, mut extracted_value, extracted_value_length, terminal_key_ptr): (u64, [u8; 33], u64, u64) = resolve2(node, rlp_list, key_nibbles, key_ptr);
+        assert(node_type == LEAF);
 
         assert((extracted_value_length as u32) <= MAX_STORAGE_VALUE_LENGTH as u32 + 1); // Extracted value be at most 33 bytes with RLP header
  	    key_ptr = terminal_key_ptr;
@@ -180,9 +183,10 @@ impl<PROOF_LEN, MAX_VALUE_LEN> TrieProof<20, PROOF_LEN, MAX_VALUE_LEN>
             assert(!in_range | verify_node_hash(node, extracted_hash)); // If within range, node hash should match the hash extracted from the preceding node.
             
             // Extract hash and advance key pointer if within range
-            let lookup: ([u8; KEY_LENGTH], u64) = resolve_nibble32(key_nibbles, if in_range {key_ptr} else {0}, node); // Resolve next nibble(s)
-            extracted_hash = if in_range {lookup.0} else {extracted_hash};
-            key_ptr = if in_range {lookup.1} else {key_ptr};
+            let lookup: (u64, [u8; KEY_LENGTH], u64) = resolve_nibble32(key_nibbles, if in_range { key_ptr } else { 0 }, node); // Resolve next nibble(s)
+            assert(!in_range | (lookup.0 != LEAF));
+            extracted_hash = if in_range {lookup.1} else {extracted_hash};
+            key_ptr = if in_range {lookup.2} else {key_ptr};
         }
         
         // Treat final node as the preceding nodes...
@@ -196,7 +200,8 @@ impl<PROOF_LEN, MAX_VALUE_LEN> TrieProof<20, PROOF_LEN, MAX_VALUE_LEN>
         let rlp_list: rlp::RLP_List<2> = rlp::decode1(node); // Terminal node must be a 2-node
         
         // ...except extract a value rather than a key.
- 	    let (mut extracted_value, extracted_value_length, terminal_key_ptr): ([u8; MAX_ACCOUNT_STATE_LENGTH], u64, u64) = resolve2(LEAF, node, rlp_list, key_nibbles, key_ptr);
+ 	    let (node_type, mut extracted_value, extracted_value_length, terminal_key_ptr): (u64, [u8; MAX_ACCOUNT_STATE_LENGTH], u64, u64) = resolve2(node, rlp_list, key_nibbles, key_ptr);
+        assert(node_type == LEAF);
 
         assert((extracted_value_length as u32) <= (MAX_VALUE_LEN as u32)); // Extracted value should fit in a byte array of length MAX_ACCOUNT_STATE_LENGTH.
  	    key_ptr = terminal_key_ptr;
@@ -321,7 +326,7 @@ pub fn compact_decode<MAX_ENC_LEN, NIB_LEN>(input: [u8; MAX_ENC_LEN], length: u6
 }
 
 /// Non-terminal nibble resolver (assuming 32-byte fixed key length).
-/// Returns the extracted hash together with an advanced key pointer.
+/// Returns the node type, extracted hash and an advanced key pointer.
 ///
 /// # Arguments
 /// * `key` - Array containing the nibbles to be resolved
@@ -331,23 +336,27 @@ pub fn resolve_nibble32<N>(
     key: [u8; NIBBLE_LENGTH],
     mut key_ptr: u64,
     node: [u8; N]) ->
-    ([u8; KEY_LENGTH], // Extracted hash
+    (u64,
+     [u8; KEY_LENGTH], // Extracted hash
      u64) // New key pointer
 {
     let rlp_list: rlp::RLP_List<MAX_NUM_FIELDS> = rlp::decode1_small_lis(node); // Assumes no intermediate nodes have slots with >= 56 bytes, which is the case for state and storage proofs.
     let num_fields = rlp_list.num_fields;
 
+    let mut node_type = BRANCH;
     let mut resolved_key = [0; KEY_LENGTH];
     let mut resolved_key_length = 0;
     
     if num_fields == 2 // If we are dealing with an extension node
     {
         // Resolve 2-node
-        let node_resolution: ([u8; KEY_LENGTH], u64, u64) = resolve2(EXTENSION, node, rlp_list, key, key_ptr);
+        
+        let node_resolution: (u64, [u8; KEY_LENGTH], u64, u64) = resolve2(node, rlp_list, key, key_ptr);
         // Deconstruct
-        key_ptr = node_resolution.2;
-        resolved_key = node_resolution.0;
-        resolved_key_length = node_resolution.1;        
+        node_type = node_resolution.0;
+        key_ptr = node_resolution.3;
+        resolved_key = node_resolution.1;
+        resolved_key_length = node_resolution.2;        
     }
     else
     {
@@ -362,9 +371,9 @@ pub fn resolve_nibble32<N>(
         resolved_key_length = node_resolution.1;
 	}
 
-    assert(resolved_key_length == KEY_LENGTH);
+    assert((node_type == LEAF) | (resolved_key_length == KEY_LENGTH));
     
-    (resolved_key, key_ptr)
+    (node_type, resolved_key, key_ptr)
 }
 
 /// Branch (i.e. 17-node) resolver. Assumes 32-byte fixed key length (i.e. slot 17 should be empty).
@@ -423,21 +432,20 @@ fn resolve17<N, NUM_FIELDS>(
 
 // Resolve a 2-node, i.e. a LEAF or EXTENSION.
 /// Leaf/extension (i.e. 2-node) resolver.
-/// Returns the extracted value, its length and the advanced key pointer.
+/// Returns the node type (LEAF or EXTENSION), extracted value, its length and the advanced key pointer.
 ///
 /// # Arguments
-/// * `node_type` - Node type, i.e. LEAF or EXTENSION
 /// * `node` - RLP-encoded leaf/extension node
 /// * `rlp_list` - RLP list look-up table for `node`
 /// * `key` - Array containing the nibbles to be resolved
 /// * `key_ptr` - Pointer to the nibbles in `key` to be resolved
 fn resolve2<N, NUM_FIELDS, MAX_VALUE_LEN>(
-    node_type: u64,
     node: [u8; N],
     rlp_list: rlp::RLP_List<NUM_FIELDS>,
     key: [u8; NIBBLE_LENGTH],
     mut key_ptr: u64)
     -> (
+    u64,
     [u8; MAX_VALUE_LEN], // Extracted value
     u64, // Value length
     u64) // New key offset
@@ -484,9 +492,7 @@ fn resolve2<N, NUM_FIELDS, MAX_VALUE_LEN>(
     // we should have followed an extension node, and if we are, then we should have followed a leaf node.
     let node_type_nibble = first_slot[0] >> 4;
 
-    assert(if node_type == LEAF { (node_type_nibble as u8) > 1 } else { (node_type == EXTENSION) & ((node_type_nibble as u8) <= 1) }); // Must have resolved a leaf or extension node.
-    
-    (value, value_length, key_ptr)
+    ((node_type_nibble > 1) as u64, value, value_length, key_ptr)
 }
 
 
