@@ -3,27 +3,27 @@ use dep::std::wrapping_sub;
 
 /// Max number of bytes required to represent length of a string or list
 // TODO: Incorporate as comptime Field function parameter whenever this is possible
-global MAX_LEN_IN_BYTES: Field = 2;
+global MAX_LEN_IN_BYTES: u64 = 2;
 
 /// RLP data type enum
-global STRING: Field = 0;
-global LIST: Field = 1;
+global STRING: u64 = 0;
+global LIST: u64 = 1;
 
 /// RLP header struct obtained from length decoding
 struct RLP_Header
 {
     /// Offset of RLP payload
-    offset: Field,
+    offset: u64,
     /// Length of RLP-encoded object starting from the above offset
-    length: Field,
+    length: u64,
     /// Data type of RLP-encoded object, i.e. STRING or LIST
-    data_type: Field 
+    data_type: u64 
 }
 
 impl RLP_Header
 {
     /// RLP header constructor
-    pub fn new(offset: Field, length: Field, data_type: Field) -> Self
+    pub fn new(offset: u64, length: u64, data_type: u64) -> Self
     {
 	    RLP_Header {offset, length, data_type}
     }
@@ -34,20 +34,20 @@ impl RLP_Header
 struct RLP_List<NUM_FIELDS>
 {
     /// Offsets of the fields
-    offset: [Field; NUM_FIELDS],
+    offset: [u64; NUM_FIELDS],
     /// Byte lengths of the fields
-    length: [Field; NUM_FIELDS],
+    length: [u64; NUM_FIELDS],
     /// Data types of fields, i.e. STRING or LIST
-    data_type: [Field; NUM_FIELDS],
+    data_type: [u64; NUM_FIELDS],
     /// Number of fields
-    num_fields: Field
+    num_fields: u64
 }
 
 impl<NUM_FIELDS> RLP_List<NUM_FIELDS>
 {
     /// RLP table constructor taking offsets, lengths, data types and number of
     /// fields as arguments
-    pub fn new(offset: [Field; NUM_FIELDS], length: [Field; NUM_FIELDS], data_type: [Field; NUM_FIELDS], num_fields: Field) -> Self
+    pub fn new(offset: [u64; NUM_FIELDS], length: [u64; NUM_FIELDS], data_type: [u64; NUM_FIELDS], num_fields: u64) -> Self
     {
 	    RLP_List {offset, length, data_type, num_fields}
     }
@@ -59,17 +59,17 @@ impl<NUM_FIELDS> RLP_List<NUM_FIELDS>
 /// # Arguments
 /// * `arr` - RLP-encoded list
 /// * `lenlen` - Number of bytes containing the length of the payload
-pub fn data_len<N>(arr: [u8; N], lenlen: Field) -> Field {
-    assert((lenlen as u32) <= (MAX_LEN_IN_BYTES as u32)); // Byte length of length of payload must not exceed MAX_LEN_IN_BYTES
+pub fn data_len<N>(arr: [u8; N], lenlen: u64) -> u64 {
+    assert(lenlen <= MAX_LEN_IN_BYTES); // Byte length of length of payload must not exceed MAX_LEN_IN_BYTES
     let mut out = 0;
 
     // Restrict loop to maximum length in bytes
-    let loop_len_ind = ((MAX_LEN_IN_BYTES as u32) < (arr.len() as u32 - 1)) as Field;
-    let loop_len = loop_len_ind * (MAX_LEN_IN_BYTES - (arr.len() - 1)) + arr.len() - 1;
+    let loop_len_ind = (MAX_LEN_IN_BYTES < (N as u64 - 1)) as u64;
+    let loop_len = (loop_len_ind as Field * (MAX_LEN_IN_BYTES as Field - (N - 1) as Field) as Field + N as Field - 1) as u64; // TODO
 
     for i in 0..loop_len {
-        let len_len_ind = (((i as u32) < (lenlen as u32)) as Field);
-        out = len_len_ind*(256*out + (arr[i + 1] as Field)) + (1-len_len_ind)*out;
+        let len_len_ind = (((i as u32) < (lenlen as u32)) as u64);
+        out = len_len_ind*(256*out + (arr[i + 1] as u64)) + (1-len_len_ind)*out;
     }
 
     out
@@ -102,11 +102,11 @@ pub fn decode_len<N>(arr: [u8; N]) -> RLP_Header {
                 strict_if(prefix_ind4, 1, wrapping_sub(1 + prefix, 0xf7) as Field)
             )
         )
-    );
+    ) as u64;
 
     // To compute length, first determine how many of the following bytes contain the length of the payload.
-    let lenlen = prefix_ind3 as Field * (1 - prefix_ind2 as Field) * wrapping_sub(prefix, 0xb7) as Field
-        + (1 - prefix_ind4 as Field) * wrapping_sub(prefix, 0xf7) as Field;
+    let lenlen = prefix_ind3 as u64 * (1 - prefix_ind2 as u64) * wrapping_sub(prefix, 0xb7) as u64
+        + (1 - prefix_ind4 as u64) * wrapping_sub(prefix, 0xf7) as u64;
 
     // Set length according to whether it is contained in the prefix (i.e. lenlen == 0).
     let len = strict_if(
@@ -120,11 +120,11 @@ pub fn decode_len<N>(arr: [u8; N]) -> RLP_Header {
                 wrapping_sub(prefix, 0xc0) as Field
             )
         ),
-        data_len(arr, lenlen)
-    );
+        data_len(arr, lenlen) as Field
+    ) as u64;
 
     // Extract data type of payload
-    let data_type = (prefix >= 0xc0) as Field;
+    let data_type = (prefix >= 0xc0) as u64;
 
     RLP_Header::new(offset, len, data_type)
 }
@@ -133,7 +133,7 @@ pub fn decode_len<N>(arr: [u8; N]) -> RLP_Header {
 ///
 /// # Arguments
 /// * `input` - RLP-encoded string
-pub fn decode0<N>(input: [u8; N]) -> (Field, Field) {
+pub fn decode0<N>(input: [u8; N]) -> (u64, u64) {
     let mut RLP_Header {offset, length, data_type} = decode_len(input); // Read RLP header of input
 
     let total_len = length + offset; // Data length including RLP header
@@ -154,7 +154,7 @@ pub fn decode0<N>(input: [u8; N]) -> (Field, Field) {
 /// * For string elements, the offset points to the payload, whereas the offset
 ///   of a list element points to the RLP header of that element.
 pub fn decode1<N, NUM_FIELDS>(input: [u8; N]) -> RLP_List<NUM_FIELDS> {
-    let mut num_fields: Field = 0; // Number of fields
+    let mut num_fields: u64 = 0; // Number of fields
     let mut dec_off = [0; NUM_FIELDS]; // Decoded offsets
     let mut dec_len = [0; NUM_FIELDS]; // Decoded lengths
     let mut dec_type = [0; NUM_FIELDS]; // Decoded types
@@ -169,7 +169,7 @@ pub fn decode1<N, NUM_FIELDS>(input: [u8; N]) -> RLP_List<NUM_FIELDS> {
 
     // Process each element of the list
     for i in 0..NUM_FIELDS {
-        let loop_ind = (offset != total_len) as Field; // Loop indicator: Take action only if there is data left to parse.
+        let loop_ind = (offset != total_len) as u64; // Loop indicator: Take action only if there is data left to parse.
 
         // Make sure the index doesn't overshoot
         let header: [u8; MAX_LEN_IN_BYTES + 1] = take_dot_drop(input, offset); // Read element header
@@ -197,7 +197,7 @@ pub fn decode1<N, NUM_FIELDS>(input: [u8; N]) -> RLP_List<NUM_FIELDS> {
 /// # Arguments
 /// * `input` - RLP-encoded list
 pub fn decode1_small_lis<N, NUM_FIELDS>(input: [u8; N]) -> RLP_List<NUM_FIELDS> {
-    let mut num_fields: Field = 0; // Number of fields
+    let mut num_fields: u64 = 0; // Number of fields
     let mut dec_off = [0; NUM_FIELDS]; // Decoded offsets
     let mut dec_len = [0; NUM_FIELDS]; // Decoded lengths
     let mut dec_type = [0; NUM_FIELDS]; // Decoded types
@@ -210,7 +210,7 @@ pub fn decode1_small_lis<N, NUM_FIELDS>(input: [u8; N]) -> RLP_List<NUM_FIELDS> 
 
     // Fill up the NUM_FIELDS fields
     for i in 0..NUM_FIELDS {
-        let loop_ind = (offset != total_len) as Field; // Loop indicator: Take action only if there is data left to parse.
+        let loop_ind = (offset != total_len) as u64; // Loop indicator: Take action only if there is data left to parse.
 
         let header = input[offset]; // Read field header
 
@@ -218,12 +218,12 @@ pub fn decode1_small_lis<N, NUM_FIELDS>(input: [u8; N]) -> RLP_List<NUM_FIELDS> 
 
         let field_type = STRING; // Always dealing with strings here
 
-        let single_byte_ind = (header < 0x80) as Field; // 1 if `header` represents a single byte.
+        let single_byte_ind = (header < 0x80) as u64; // 1 if `header` represents a single byte.
 
         let field_off = 1 - single_byte_ind; // If `header` < 0x80, then we are dealing with a single byte whose value
         // is given by header. Else, the string begins at the following index.
 
-        let field_len = single_byte_ind * 1 + (1 - single_byte_ind) * (wrapping_sub(header, 0x80) as Field); // Single byte means len = 1,
+        let field_len = single_byte_ind * 1 + (1 - single_byte_ind) * (wrapping_sub(header, 0x80) as u64); // Single byte means len = 1,
         // else subtract 0x80 from the header to determine len.
 
         let total_field_len = field_off + field_len; // Length of field + header
@@ -281,7 +281,7 @@ fn rlp_decode_test() {
 #[test]
 fn data_len_test_unpadded() {
     let rlp_header = [249, 1, 109];
-    let lenlen = (rlp_header[0] - 0xf7) as Field;
+    let lenlen = (rlp_header[0] - 0xf7) as u64;
     assert(data_len(rlp_header, lenlen) == 0x016d);
 }
 
@@ -291,7 +291,7 @@ fn data_len_test_padded() {
     let rlp_header = [
         249, 1, 109, 32, 185, 1, 105, 2, 249, 1, 101, 1, 132, 1, 3, 187, 10, 185, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 64, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 32, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 248, 90, 248, 88, 148, 56, 140, 129, 140, 168, 185, 37, 27, 57, 49, 49, 192, 138, 115, 106, 103, 204, 177, 146, 151, 225, 160, 39, 241, 42, 191, 227, 88, 96, 169, 169, 39, 180, 101, 187, 61, 74, 156, 35, 200, 66, 129, 116, 184, 63, 39, 143, 228, 94, 215, 180, 218, 38, 98, 160, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 36, 230, 50, 131, 46, 62, 226, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
     ];
-    let lenlen = (rlp_header[0] - 0xf7) as Field;
+    let lenlen = (rlp_header[0] - 0xf7) as u64;
     assert(data_len(rlp_header, lenlen) == 0x016d);
 }
 
@@ -311,7 +311,7 @@ fn rlp_length_check() {
     assert(y.length == 2);
     assert(y.data_type == STRING);
 
-    // // Longer string test case
+    // Longer string test case
     let z = decode_len(
         [
         185, 4, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130, 131, 132, 133, 134, 135, 136, 137, 138, 139, 140, 141, 142, 143, 144, 145, 146, 147, 148, 149, 150, 151, 152, 153, 154, 155, 156, 157, 158, 159, 160, 161, 162, 163, 164, 165, 166, 167, 168, 169, 170, 171, 172, 173, 174, 175, 176, 177, 178, 179, 180, 181, 182, 183, 184, 185, 186, 187, 188, 189, 190, 191, 192, 193, 194, 195, 196, 197, 198, 199, 200, 201, 202, 203, 204, 205, 206, 207, 208, 209, 210, 211, 212, 213, 214, 215, 216, 217, 218, 219, 220, 221, 222, 223, 224, 225, 226, 227, 228, 229, 230, 231, 232, 233, 234, 235, 236, 237, 238, 239, 240, 241, 242, 243, 244, 245, 246, 247, 248, 249, 250, 251, 252, 253, 254, 255, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130, 131, 132, 133, 134, 135, 136, 137, 138, 139, 140, 141, 142, 143, 144, 145, 146, 147, 148, 149, 150, 151, 152, 153, 154, 155, 156, 157, 158, 159, 160, 161, 162, 163, 164, 165, 166, 167, 168, 169, 170, 171, 172, 173, 174, 175, 176, 177, 178, 179, 180, 181, 182, 183, 184, 185, 186, 187, 188, 189, 190, 191, 192, 193, 194, 195, 196, 197, 198, 199, 200, 201, 202, 203, 204, 205, 206, 207, 208, 209, 210, 211, 212, 213, 214, 215, 216, 217, 218, 219, 220, 221, 222, 223, 224, 225, 226, 227, 228, 229, 230, 231, 232, 233, 234, 235, 236, 237, 238, 239, 240, 241, 242, 243, 244, 245, 246, 247, 248, 249, 250, 251, 252, 253, 254, 255, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130, 131, 132, 133, 134, 135, 136, 137, 138, 139, 140, 141, 142, 143, 144, 145, 146, 147, 148, 149, 150, 151, 152, 153, 154, 155, 156, 157, 158, 159, 160, 161, 162, 163, 164, 165, 166, 167, 168, 169, 170, 171, 172, 173, 174, 175, 176, 177, 178, 179, 180, 181, 182, 183, 184, 185, 186, 187, 188, 189, 190, 191, 192, 193, 194, 195, 196, 197, 198, 199, 200, 201, 202, 203, 204, 205, 206, 207, 208, 209, 210, 211, 212, 213, 214, 215, 216, 217, 218, 219, 220, 221, 222, 223, 224, 225, 226, 227, 228, 229, 230, 231, 232, 233, 234, 235, 236, 237, 238, 239, 240, 241, 242, 243, 244, 245, 246, 247, 248, 249, 250, 251, 252, 253, 254, 255, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130, 131, 132, 133, 134, 135, 136, 137, 138, 139, 140, 141, 142, 143, 144, 145, 146, 147, 148, 149, 150, 151, 152, 153, 154, 155, 156, 157, 158, 159, 160, 161, 162, 163, 164, 165, 166, 167, 168, 169, 170, 171, 172, 173, 174, 175, 176, 177, 178, 179, 180, 181, 182, 183, 184, 185, 186, 187, 188, 189, 190, 191, 192, 193, 194, 195, 196, 197, 198, 199, 200, 201, 202, 203, 204, 205, 206, 207, 208, 209, 210, 211, 212, 213, 214, 215, 216, 217, 218, 219, 220, 221, 222, 223, 224, 225, 226, 227, 228, 229, 230, 231, 232, 233, 234, 235, 236, 237, 238, 239, 240, 241, 242, 243, 244, 245, 246, 247, 248, 249, 250, 251, 252, 253, 254, 255, 0
@@ -323,12 +323,12 @@ fn rlp_length_check() {
 }
 
 // Function for selecting M elements of an array starting at index n
-pub fn take_dot_drop<T, N, M>(arr: [T; N], n: Field) -> [T; M] // = drop n . take M
+pub fn take_dot_drop<T, N, M>(arr: [T; N], n: u64) -> [T; M] // = drop n . take M
 {
     let mut out = [dep::std::unsafe::zeroed(); M];
 
     for i in 0..M {
-        let j = (((i + n) as u64) < N) as Field * (i + n); // Restrict to proper range and fill with arr[0] otherwise.
+        let j = (((i + n) as u64) < N) as u64 * (i + n); // Restrict to proper range and fill with arr[0] otherwise.
         out[i] = arr[j];
     }
 

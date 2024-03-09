@@ -4,32 +4,32 @@ use dep::std::hash::keccak256;
 mod rlp; // Module for required RLP encoding/decoding
 
 /// 2-node enum
-global EXTENSION: Field = 0; global LEAF: Field = 1;
+global EXTENSION: u64 = 0; global LEAF: u64 = 1;
 
 /// Constants for 32-byte long keys; TODO: Omit these when it is possible to replace constants with numeric generics.
-global KEY_LENGTH: Field = 32; // (fixed) key length in bytes
-global NIBBLE_LENGTH: Field = 64; // = 2*KEY_LENGTH
+global KEY_LENGTH: u64 = 32; // (fixed) key length in bytes
+global NIBBLE_LENGTH: u64 = 64; // = 2*KEY_LENGTH
 
 /// Maximum trie node length. For tries with 32-byte long keys, we we can bound the byte length of any node from above by this constant.
-global MAX_TRIE_NODE_LENGTH: Field = 532; // = MAX_RLP_LIST_HEADER_LENGTH (= 1 + MAX_LENGTH_BYTES)
+global MAX_TRIE_NODE_LENGTH: u64 = 532; // = MAX_RLP_LIST_HEADER_LENGTH (= 1 + MAX_LENGTH_BYTES)
 //   + 16*MAX_RLP_ELEMENT_LENGTH (= 16*(1 + KEY_LENGTH))
 // + LENGTH_OF_NULL_ELEMENT (= 1)
 
 /// Maximum size of the value in a storage slot
-global MAX_STORAGE_VALUE_LENGTH: Field = 32;
+global MAX_STORAGE_VALUE_LENGTH: u64 = 32;
 
 /// Maximum number of bytes in an account state
-global MAX_ACCOUNT_STATE_LENGTH: Field = 134;
+global MAX_ACCOUNT_STATE_LENGTH: u64 = 134;
 
 /// Maximum number of RLP-encoded elements in a trie node
-global MAX_NUM_FIELDS: Field = 17;
+global MAX_NUM_FIELDS: u64 = 17;
 
 /// Type for storage proofs corresponding to `ethers-rs` StorageProof type
 /// Involves 32-byte keys
-// TODO: Add comptime Field parameters to
+// TODO: Add comptime u64 parameters to
 // - bound the sizes of the nodes embedded in `proof` to allow arbitrary fixed-length keys
 // - bound the key length to allow variable-length keys
-// These would require the ability to declare arrays of length expressed as a comptime Field variable.
+// These would require the ability to declare arrays of length expressed as a comptime u64 variable.
 struct TrieProof<KEY_LEN, PROOF_LEN, MAX_VALUE_LEN>
 {
     /// Unhashed key to look up along proof path
@@ -37,7 +37,7 @@ struct TrieProof<KEY_LEN, PROOF_LEN, MAX_VALUE_LEN>
     /// RLP encoded proof path; assumed to be obtained by appropriately right-padding each node (e.g. with zeros) and concatenating in order. The size of each node will depend on the application, e.g. MAX_TRIE_NODE_LENGTH for storage proofs.
     proof: [u8; PROOF_LEN],
     /// Depth of proof. Necessary for technical reasons.
-    depth: Field,
+    depth: u64,
     /// The value the given proof path should terminate with.
     value: [u8; MAX_VALUE_LEN]
 }
@@ -96,7 +96,7 @@ impl<PROOF_LEN, MAX_VALUE_LEN> TrieProof<32, PROOF_LEN, MAX_VALUE_LEN>
             assert(!in_range | verify_node_hash(node, extracted_hash)); // If within range, node hash should match the hash extracted from the preceding node.
             
             // Extract hash and advance key pointer if within range
-            let lookup: ([u8; 32], Field) = resolve_nibble32(key_nibbles, if in_range {key_ptr} else {0}, node); // Resolve next nibble(s)
+            let lookup: ([u8; 32], u64) = resolve_nibble32(key_nibbles, if in_range {key_ptr} else {0}, node); // Resolve next nibble(s)
             extracted_hash = if in_range {lookup.0} else {extracted_hash};
             key_ptr = if in_range {lookup.1} else {key_ptr};
         }
@@ -112,7 +112,7 @@ impl<PROOF_LEN, MAX_VALUE_LEN> TrieProof<32, PROOF_LEN, MAX_VALUE_LEN>
         let rlp_list: rlp::RLP_List<2> = rlp::decode1_small_lis(node); // Terminal node must be a 2-node, and both slots contain less than 56 bytes.
         
         // ...except extract a value rather than a key.
- 	    let (mut extracted_value, extracted_value_length, terminal_key_ptr): ([u8; 33], Field, Field) = resolve2(LEAF, node, rlp_list, key_nibbles, key_ptr);
+ 	    let (mut extracted_value, extracted_value_length, terminal_key_ptr): ([u8; 33], u64, u64) = resolve2(LEAF, node, rlp_list, key_nibbles, key_ptr);
 
         assert((extracted_value_length as u32) <= MAX_STORAGE_VALUE_LENGTH as u32 + 1); // Extracted value be at most 33 bytes with RLP header
  	    key_ptr = terminal_key_ptr;
@@ -180,7 +180,7 @@ impl<PROOF_LEN, MAX_VALUE_LEN> TrieProof<20, PROOF_LEN, MAX_VALUE_LEN>
             assert(!in_range | verify_node_hash(node, extracted_hash)); // If within range, node hash should match the hash extracted from the preceding node.
             
             // Extract hash and advance key pointer if within range
-            let lookup: ([u8; KEY_LENGTH], Field) = resolve_nibble32(key_nibbles, if in_range {key_ptr} else {0}, node); // Resolve next nibble(s)
+            let lookup: ([u8; KEY_LENGTH], u64) = resolve_nibble32(key_nibbles, if in_range {key_ptr} else {0}, node); // Resolve next nibble(s)
             extracted_hash = if in_range {lookup.0} else {extracted_hash};
             key_ptr = if in_range {lookup.1} else {key_ptr};
         }
@@ -196,7 +196,7 @@ impl<PROOF_LEN, MAX_VALUE_LEN> TrieProof<20, PROOF_LEN, MAX_VALUE_LEN>
         let rlp_list: rlp::RLP_List<2> = rlp::decode1(node); // Terminal node must be a 2-node
         
         // ...except extract a value rather than a key.
- 	    let (mut extracted_value, extracted_value_length, terminal_key_ptr): ([u8; MAX_ACCOUNT_STATE_LENGTH], Field, Field) = resolve2(LEAF, node, rlp_list, key_nibbles, key_ptr);
+ 	    let (mut extracted_value, extracted_value_length, terminal_key_ptr): ([u8; MAX_ACCOUNT_STATE_LENGTH], u64, u64) = resolve2(LEAF, node, rlp_list, key_nibbles, key_ptr);
 
         assert((extracted_value_length as u32) <= (MAX_VALUE_LEN as u32)); // Extracted value should fit in a byte array of length MAX_ACCOUNT_STATE_LENGTH.
  	    key_ptr = terminal_key_ptr;
@@ -231,7 +231,7 @@ pub fn verify_node_hash<N>(node: [u8; N], hash: [u8; KEY_LENGTH])
     let node_length = { let rlp_header = rlp::decode_len(node); rlp_header.offset + rlp_header.length }; // Determine length of node
 
     // Extra safety
-    let in_range = ((node_length as u32) > (node.len() as u32)) as Field;
+    let in_range = ((node_length as u32) > (node.len() as u32)) as u64;
     let safe_length = in_range*node.len() + (1-in_range)*node_length;
     
     // Compute Keccak256 hash of node
@@ -281,7 +281,7 @@ pub fn key_as_nibbles<KEY_LEN, NIB_LEN>(key: [u8; KEY_LEN]) -> [u8; NIB_LEN]
 /// # Arguments
 /// * `input`: The first field of a leaf/extension node as a (right-padded) byte array
 /// * `length`: The actual length of the data in `input`
-pub fn compact_decode<MAX_ENC_LEN, NIB_LEN>(input: [u8; MAX_ENC_LEN], length: Field) -> ([u8; NIB_LEN], Field)
+pub fn compact_decode<MAX_ENC_LEN, NIB_LEN>(input: [u8; MAX_ENC_LEN], length: u64) -> ([u8; NIB_LEN], u64)
 {
 
     assert((2 as u32)*(MAX_ENC_LEN as u32) <= ((NIB_LEN + 2) as u32)); // MAX_ENC_LEN should be NIB_LEN/2 or NIB_LEN/2 + 1. TODO
@@ -312,7 +312,7 @@ pub fn compact_decode<MAX_ENC_LEN, NIB_LEN>(input: [u8; MAX_ENC_LEN], length: Fi
         prev_nibbles = cur_nibbles;
     }
 
-	out_length = 2*length + (parity as Field) - 2;
+	out_length = 2*length + (parity as u64) - 2;
 
 
     assert((out_length as u32) <= (NIB_LEN as u32)); // Sanity check
@@ -329,10 +329,10 @@ pub fn compact_decode<MAX_ENC_LEN, NIB_LEN>(input: [u8; MAX_ENC_LEN], length: Fi
 /// * `node` - RLP-encoded byte array of branch or extension node
 pub fn resolve_nibble32<N>(
     key: [u8; NIBBLE_LENGTH],
-    mut key_ptr: Field,
+    mut key_ptr: u64,
     node: [u8; N]) ->
     ([u8; KEY_LENGTH], // Extracted hash
-     Field) // New key pointer
+     u64) // New key pointer
 {
     let rlp_list: rlp::RLP_List<MAX_NUM_FIELDS> = rlp::decode1_small_lis(node); // Assumes no intermediate nodes have slots with >= 56 bytes, which is the case for state and storage proofs.
     let num_fields = rlp_list.num_fields;
@@ -343,7 +343,7 @@ pub fn resolve_nibble32<N>(
     if num_fields == 2 // If we are dealing with an extension node
     {
         // Resolve 2-node
-        let node_resolution: ([u8; KEY_LENGTH], Field, Field) = resolve2(EXTENSION, node, rlp_list, key, key_ptr);
+        let node_resolution: ([u8; KEY_LENGTH], u64, u64) = resolve2(EXTENSION, node, rlp_list, key, key_ptr);
         // Deconstruct
         key_ptr = node_resolution.2;
         resolved_key = node_resolution.0;
@@ -380,11 +380,11 @@ fn resolve17<N, NUM_FIELDS>(
     node: [u8; N],
     rlp_list: rlp::RLP_List<NUM_FIELDS>,
     key: [u8; NIBBLE_LENGTH],
-    mut key_ptr: Field)
+    mut key_ptr: u64)
     -> (
     [u8; KEY_LENGTH], // Extracted hash
-    Field, // Extracted key length
-    Field) // New key pointer
+    u64, // Extracted key length
+    u64) // New key pointer
 {
     // We should be dealing with a node containing 17 elements
     assert(rlp_list.num_fields == 17);
@@ -392,21 +392,21 @@ fn resolve17<N, NUM_FIELDS>(
     // The first 16 slots should be of length 32 or 0.
     for i in 0..16
     {
-        assert(rlp_list.length[i]*(rlp_list.length[i] - KEY_LENGTH) == 0);
+        assert(rlp_list.length[i] as Field * (rlp_list.length[i] as Field - KEY_LENGTH as Field) == 0);
     }
 
     // And the last slot should be empty
     assert(rlp_list.length[16] == 0);
     
     let cur_nibble = key[key_ptr];
-	let resolved_key_length = rlp_list.length[cur_nibble as Field];
+	let resolved_key_length = rlp_list.length[cur_nibble as u64];
 
     assert(resolved_key_length == KEY_LENGTH);
     assert((key_ptr as u32) < (NIBBLE_LENGTH as u32)); // Fixed-length key => Node cannot be terminal.
     
     key_ptr += 1;
 
-	let nibble_offset = rlp_list.offset[cur_nibble as Field];
+	let nibble_offset = rlp_list.offset[cur_nibble as u64];
 
     let mut resolved_key = [0; KEY_LENGTH];
     
@@ -432,15 +432,15 @@ fn resolve17<N, NUM_FIELDS>(
 /// * `key` - Array containing the nibbles to be resolved
 /// * `key_ptr` - Pointer to the nibbles in `key` to be resolved
 fn resolve2<N, NUM_FIELDS, MAX_VALUE_LEN>(
-    node_type: Field,
+    node_type: u64,
     node: [u8; N],
     rlp_list: rlp::RLP_List<NUM_FIELDS>,
     key: [u8; NIBBLE_LENGTH],
-    mut key_ptr: Field)
+    mut key_ptr: u64)
     -> (
     [u8; MAX_VALUE_LEN], // Extracted value
-    Field, // Value length
-    Field) // New key offset
+    u64, // Value length
+    u64) // New key offset
 {
     // We should be dealing with a node containing two elements
     assert(rlp_list.num_fields == 2);
@@ -449,7 +449,7 @@ fn resolve2<N, NUM_FIELDS, MAX_VALUE_LEN>(
     
     let first_slot: [u8; 1 + NIBBLE_LENGTH/2] = rlp::take_dot_drop(node,rlp_list.offset[0]); // TODO: Replace consts with numeric generics when it is possible to use them in array length expressions
     
-	let (nib, niblen): ([u8; NIBBLE_LENGTH], Field) = compact_decode(first_slot, rlp_list.length[0]);
+	let (nib, niblen): ([u8; NIBBLE_LENGTH], u64) = compact_decode(first_slot, rlp_list.length[0]);
 
     // Length checks.
     // Should not go past 64 nibbles.
@@ -495,14 +495,14 @@ fn resolve2<N, NUM_FIELDS, MAX_VALUE_LEN>(
 ///
 /// # Arguments
 /// * `in_value` - Byte array representing a number in big-endian form.
-pub fn byte_value<N>(in_value: [u8; N]) -> ([u8; N], Field)
+pub fn byte_value<N>(in_value: [u8; N]) -> ([u8; N], u64)
 {
     let mut value_length = 0;
 
     for i in 0..N
     {
-        let num_bytes_ind = (value_length == 0) as Field;
-        let byte_ind = (in_value[i] != 0) as Field;
+        let num_bytes_ind = (value_length == 0) as u64;
+        let byte_ind = (in_value[i] != 0) as u64;
         value_length = num_bytes_ind*byte_ind*(N - i) + (1-num_bytes_ind)*value_length;
     }
 
@@ -520,14 +520,14 @@ pub fn byte_value<N>(in_value: [u8; N]) -> ([u8; N], Field)
 ///
 /// # Quirks
 /// The empty slots are set to 0.
-fn left_byte_shift<N>(input: [u8; N], n: Field) -> [u8; N]
+fn left_byte_shift<N>(input: [u8; N], n: u64) -> [u8; N]
 {
     let mut out = [0; N];
 
     for i in 0..N
     {
         // Restrict indices to be shifted, i.e. ∀i: i+n < N, out[i] ← input[i+n].
-        let index_ind = (((i+n) as u32) < (N as u32)) as Field;
+        let index_ind = (((i+n) as u32) < (N as u32)) as u64;
         out[i] = (index_ind as u8)*input[index_ind*(i+n)];
     }
 
@@ -1427,15 +1427,15 @@ fn nibble_check()
 #[test]
 fn compact_decode_test()
 {
-    let (nibble0, len0): ([u8; NIBBLE_LENGTH], Field) = compact_decode([0x11, 0x23, 0x45,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0], 3);
+    let (nibble0, len0): ([u8; NIBBLE_LENGTH], u64) = compact_decode([0x11, 0x23, 0x45,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0], 3);
     assert(len0 == 5);
     assert([nibble0[0], nibble0[1], nibble0[2], nibble0[3], nibble0[4]] == [1,2,3,4,5]);
 
-    let (nibble1, len1): ([u8; NIBBLE_LENGTH], Field) = compact_decode([0x20, 0x0f, 0x1c, 0xb8, 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0], 4);
+    let (nibble1, len1): ([u8; NIBBLE_LENGTH], u64) = compact_decode([0x20, 0x0f, 0x1c, 0xb8, 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0], 4);
     assert(len1 == 6);
     assert([nibble1[0], nibble1[1], nibble1[2], nibble1[3], nibble1[4], nibble1[5]] == [0,15,1,12,11,8]);
 
-    let (nibble2, len2): ([u8; NIBBLE_LENGTH], Field) = compact_decode([0x3f, 0x1c, 0xb8, 0x99, 0xab, 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0], 3);
+    let (nibble2, len2): ([u8; NIBBLE_LENGTH], u64) = compact_decode([0x3f, 0x1c, 0xb8, 0x99, 0xab, 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0], 3);
     assert(len2 == 5);
     assert([nibble2[0], nibble2[1], nibble2[2], nibble2[3], nibble2[4]] == [15,1,12,11,8]);
     
