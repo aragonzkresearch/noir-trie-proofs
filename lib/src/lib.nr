@@ -69,7 +69,7 @@ impl<PROOF_LEN, MAX_VALUE_LEN> TrieProof<32, PROOF_LEN, MAX_VALUE_LEN>
         
         let key_nibbles: [u8; NIBBLE_LENGTH] = key_as_nibbles(key);
         
-        let mut key_ptr = 0;
+        let mut key_ptr: u64 = 0;
 
         let (value, mut value_length) = byte_value(self.value); // Value to verify together with its byte length
 
@@ -81,7 +81,7 @@ impl<PROOF_LEN, MAX_VALUE_LEN> TrieProof<32, PROOF_LEN, MAX_VALUE_LEN>
 
         let mut node = [0; MAX_TRIE_NODE_LENGTH];
 
-        for i in 0..(path.len()/MAX_TRIE_NODE_LENGTH - 1)
+        for i in 0..(path.len() as u64 / MAX_TRIE_NODE_LENGTH - 1)
         {
             let in_range = (i as u8) < (depth - 1) as u8; // Range indicator
             
@@ -120,7 +120,7 @@ impl<PROOF_LEN, MAX_VALUE_LEN> TrieProof<32, PROOF_LEN, MAX_VALUE_LEN>
         assert((extracted_value_length as u32) <= MAX_STORAGE_VALUE_LENGTH as u32 + 1); // Extracted value be at most 33 bytes with RLP header
  	    key_ptr = terminal_key_ptr;
 
-        assert(key_ptr == 2*key.len()); // All of the key has been exhausted.
+        assert(key_ptr == 2 * key.len() as u64); // All of the key has been exhausted.
 
         // Decode extracted value
         let (dec_value_offset, dec_value_len) = rlp::decode0(extracted_value);
@@ -156,7 +156,7 @@ impl<PROOF_LEN, MAX_VALUE_LEN> TrieProof<20, PROOF_LEN, MAX_VALUE_LEN>
         
         let key_nibbles: [u8; NIBBLE_LENGTH] = key_as_nibbles(key);
         
-        let mut key_ptr = 0;
+        let mut key_ptr: u64 = 0;
 
         let (value, mut value_length) = byte_value(self.value); // Value to verify together with its byte length
 
@@ -168,7 +168,7 @@ impl<PROOF_LEN, MAX_VALUE_LEN> TrieProof<20, PROOF_LEN, MAX_VALUE_LEN>
 
         let mut node = [0; MAX_TRIE_NODE_LENGTH];
 
-        for i in 0..(path.len()/MAX_TRIE_NODE_LENGTH - 1)
+        for i in 0..(path.len() as u64 / MAX_TRIE_NODE_LENGTH - 1)
         {
             let in_range = (i as u8) < (depth - 1) as u8; // Range indicator
             
@@ -206,7 +206,7 @@ impl<PROOF_LEN, MAX_VALUE_LEN> TrieProof<20, PROOF_LEN, MAX_VALUE_LEN>
         assert((extracted_value_length as u32) <= (MAX_VALUE_LEN as u32)); // Extracted value should fit in a byte array of length MAX_ACCOUNT_STATE_LENGTH.
  	    key_ptr = terminal_key_ptr;
 
-        assert(key_ptr == 2*key.len()); // All of the key has been exhausted.
+        assert(key_ptr == 2 * key.len() as u64); // All of the key has been exhausted.
 
         // No need to decode data, but it ought to be a list.
         assert(extracted_value[0] >= 0xc0);
@@ -237,7 +237,7 @@ pub fn verify_node_hash<N>(node: [u8; N], hash: [u8; KEY_LENGTH])
 
     // Extra safety
     let in_range = ((node_length as u32) > (node.len() as u32)) as u64;
-    let safe_length = in_range*node.len() + (1-in_range)*node_length;
+    let safe_length = in_range * node.len() as u64 + (1 - in_range) * node_length;
     
     // Compute Keccak256 hash of node
 	let node_hash = keccak256(node, safe_length as u32);
