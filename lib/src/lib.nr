@@ -89,10 +89,7 @@ impl<PROOF_LEN, MAX_VALUE_LEN> TrieProof<32, PROOF_LEN, MAX_VALUE_LEN>
             let k = if (in_range) {i} else {0}; // Restrict index to range {0, ..., depth - 2}
 
             // Populate node array
-	        for j in 0..MAX_TRIE_NODE_LENGTH
-	        {
-		        node[j] = path[j + k*MAX_TRIE_NODE_LENGTH];
-	        }
+            memcpy(&mut node, path, k*MAX_TRIE_NODE_LENGTH);
 
             assert(!in_range | verify_node_hash(node, extracted_hash), "Middle node hash does not match the hash extracted from the preceding node"); // If within range, node hash should match the hash extracted from the preceding node.
             
@@ -105,10 +102,7 @@ impl<PROOF_LEN, MAX_VALUE_LEN> TrieProof<32, PROOF_LEN, MAX_VALUE_LEN>
         }
         
         // Treat final node as the preceding nodes...
-        for j in 0..MAX_TRIE_NODE_LENGTH
-	    {
-		    node[j] = path[j + (depth - 1)*MAX_TRIE_NODE_LENGTH];
-	    }
+        memcpy(&mut node, path, (depth - 1)*MAX_TRIE_NODE_LENGTH);
 
         assert(verify_node_hash(node, extracted_hash), "Terminal node hash does not match the hash extracted from the preceding node");
 
@@ -176,10 +170,7 @@ impl<PROOF_LEN, MAX_VALUE_LEN> TrieProof<20, PROOF_LEN, MAX_VALUE_LEN>
             let k = if (in_range) {i} else {0}; // Restrict index to range {0, ..., depth - 2}
 
             // Populate node array
-	        for j in 0..MAX_TRIE_NODE_LENGTH
-	        {
-		        node[j] = path[j + k*MAX_TRIE_NODE_LENGTH];
-	        }
+            memcpy(&mut node, path, k*MAX_TRIE_NODE_LENGTH);
 
             assert(!in_range | verify_node_hash(node, extracted_hash)); // If within range, node hash should match the hash extracted from the preceding node.
             
@@ -191,10 +182,7 @@ impl<PROOF_LEN, MAX_VALUE_LEN> TrieProof<20, PROOF_LEN, MAX_VALUE_LEN>
         }
         
         // Treat final node as the preceding nodes...
-        for j in 0..MAX_TRIE_NODE_LENGTH
-	    {
-		    node[j] = path[j + (depth - 1)*MAX_TRIE_NODE_LENGTH];
-	    }
+        memcpy(&mut node, path, (depth - 1)*MAX_TRIE_NODE_LENGTH);
 
         assert(verify_node_hash(node, extracted_hash));
 
@@ -222,6 +210,20 @@ impl<PROOF_LEN, MAX_VALUE_LEN> TrieProof<20, PROOF_LEN, MAX_VALUE_LEN>
         }
         
         true
+    }
+}
+
+/// Fills destination array with content of source array starting from the starting position.
+///
+/// # Arguments
+/// * `dest` - Destination array
+/// * `src` - Source array
+/// * `start_pos` - Starting position in source array 
+fn memcpy<N, M>(dest: &mut [u8; N], src: [u8; M], start_pos: u64)
+{
+    for i in 0..N
+    {
+        (*dest)[i] = src[start_pos + i];
     }
 }
 
@@ -539,6 +541,15 @@ fn left_byte_shift<N>(input: [u8; N], n: u64) -> [u8; N]
     }
 
     out
+}
+
+#[test]
+fn memcpy_test()
+{
+    let mut dest = [0; 10];
+    let src = [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20];
+    memcpy(&mut dest, src, 5);
+    assert(dest == [6,7,8,9,10,11,12,13,14,15]);
 }
 
 #[test]
