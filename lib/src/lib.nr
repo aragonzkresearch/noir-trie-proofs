@@ -121,13 +121,7 @@ impl<PROOF_LEN, MAX_VALUE_LEN> TrieProof<32, PROOF_LEN, MAX_VALUE_LEN>
         let (dec_value_offset, dec_value_len) = rlp::decode0(extracted_value);
         assert(dec_value_len == value_length);
         
-        for i in 0..MAX_VALUE_LEN
-        {
-            if (i as u32) < (value_length as u32)
-            {
-                assert(extracted_value[dec_value_offset + i] == value[i]);
-            }
-        }
+        assert_arrays_equal(value, extracted_value, value_length, dec_value_offset);
         
         true
     }
@@ -201,13 +195,7 @@ impl<PROOF_LEN, MAX_VALUE_LEN> TrieProof<20, PROOF_LEN, MAX_VALUE_LEN>
         assert(extracted_value[0] >= 0xc0);
 
         assert(extracted_value_length == value_length);
-        for i in 0..MAX_VALUE_LEN
-        {
-            if (i as u32) < (value_length as u32)
-            {
-                assert(extracted_value[i] == value[i]);
-            }
-        }
+        assert_arrays_equal(value, extracted_value, value_length, 0);
         
         true
     }
@@ -224,6 +212,24 @@ fn memcpy<N, M>(dest: &mut [u8; N], src: [u8; M], start_pos: u64)
     for i in 0..N
     {
         (*dest)[i] = src[start_pos + i];
+    }
+}
+
+/// Verifies that specified number of elements from an array match elements from the offset array
+/// at specified offset.
+///
+/// # Arguments
+/// * `array` - Array to be verified
+/// * `offset_array` - Array to be verified against
+/// * `len` - Number of elements to be verified
+/// * `offset` - Offset in `offset_array`
+fn assert_arrays_equal<N, M>(array: [u8; N], offset_array: [u8; M], len: u64, offset: u64)
+{
+    for i in 0..N
+    {
+        if (i as u32) < (len as u32) {
+            assert(array[i] == offset_array[offset + i]);
+        }
     }
 }
 
@@ -550,6 +556,22 @@ fn memcpy_test()
     let src = [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20];
     memcpy(&mut dest, src, 5);
     assert(dest == [6,7,8,9,10,11,12,13,14,15]);
+}
+
+#[test]
+fn arrays_equal_test()
+{
+    let array = [3,4,5,6,7,8,9,10];
+    let offset_array = [1,2,3,4,5,6,7,8,9,10];
+    assert_arrays_equal(array, offset_array, 10, 2);
+}
+
+#[test(should_fail)]
+fn arrays_equal_test_fail()
+{
+    let array = [1,2,3,4,5,6,7,8,9,10];
+    let offset_array = [1,2,3,4,5,6,7,8,9,11];
+    assert_arrays_equal(array, offset_array, 10, 0);
 }
 
 #[test]
