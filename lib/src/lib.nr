@@ -206,29 +206,29 @@ impl<PROOF_LEN, MAX_VALUE_LEN> TrieProof<20, PROOF_LEN, MAX_VALUE_LEN>
 /// # Arguments
 /// * `dest` - Destination array
 /// * `src` - Source array
-/// * `start_pos` - Starting position in source array 
-fn memcpy<N, M>(dest: &mut [u8; N], src: [u8; M], start_pos: u64)
+/// * `offset` - Offset in source array 
+fn memcpy<N, M>(dest: &mut [u8; N], src: [u8; M], offset: u64)
 {
     for i in 0..N
     {
-        (*dest)[i] = src[start_pos + i];
+        (*dest)[i] = src[offset + i];
     }
 }
 
-/// Verifies that specified number of elements from an array match elements from the offset array
+/// Verifies that specified number of elements from a subarray match elements from the array
 /// at specified offset.
 ///
 /// # Arguments
-/// * `array` - Array to be verified
-/// * `offset_array` - Array to be verified against
+/// * `subarray` - Array to be verified
+/// * `array` - Array to be verified against
 /// * `len` - Number of elements to be verified
-/// * `offset` - Offset in `offset_array`
-fn assert_arrays_equal<N, M>(array: [u8; N], offset_array: [u8; M], len: u64, offset: u64)
+/// * `offset` - Offset in `array`
+fn assert_arrays_equal<N, M>(subarray: [u8; N], array: [u8; M], len: u64, offset: u64)
 {
     for i in 0..N
     {
-        if (i as u32) < (len as u32) {
-            assert(array[i] == offset_array[offset + i]);
+        if i < len {
+            assert(subarray[i] == array[offset + i], "Arrays do not match at specified offset");
         }
     }
 }
@@ -550,28 +550,28 @@ fn left_byte_shift<N>(input: [u8; N], n: u64) -> [u8; N]
 }
 
 #[test]
-fn memcpy_test()
+fn test_memcpy()
 {
-    let mut dest = [0; 10];
-    let src = [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20];
-    memcpy(&mut dest, src, 5);
-    assert(dest == [6,7,8,9,10,11,12,13,14,15]);
+    let mut dest = [0; 3];
+    let src = [1, 2, 3, 4, 5];
+    memcpy(&mut dest, src, 2);
+    assert(dest == [3, 4, 5]);
 }
 
 #[test]
-fn arrays_equal_test()
+fn test_arrays_equal()
 {
-    let array = [3,4,5,6,7,8,9,10];
-    let offset_array = [1,2,3,4,5,6,7,8,9,10];
-    assert_arrays_equal(array, offset_array, 10, 2);
+    let subarray = [2, 3];
+    let array = [1, 2, 3];
+    assert_arrays_equal(subarray, array, 2, 1);
 }
 
-#[test(should_fail)]
-fn arrays_equal_test_fail()
+#[test(should_fail_with_message = "Arrays do not match at specified offset")]
+fn test_arrays_equal_fail()
 {
-    let array = [1,2,3,4,5,6,7,8,9,10];
-    let offset_array = [1,2,3,4,5,6,7,8,9,11];
-    assert_arrays_equal(array, offset_array, 10, 0);
+    let subarray = [1, 2, 3];
+    let array = [1, 2, 4];
+    assert_arrays_equal(subarray, array, 2, 1);
 }
 
 #[test]
