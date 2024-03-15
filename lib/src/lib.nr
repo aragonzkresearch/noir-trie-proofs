@@ -85,17 +85,17 @@ impl<PROOF_LEN, MAX_VALUE_LEN> TrieProof<32, PROOF_LEN, MAX_VALUE_LEN>
             verify_internal_node(&mut extracted_hash, &mut key_ptr, key_nibbles, path, depth, i);
         }
 
-        let mut terminal_node = [0; MAX_TRIE_NODE_LENGTH];
+        let mut leaf_node = [0; MAX_TRIE_NODE_LENGTH];
         
         // Treat final node as the preceding nodes...
-        memcpy(&mut terminal_node, path, (depth - 1)*MAX_TRIE_NODE_LENGTH);
+        memcpy(&mut leaf_node, path, (depth - 1)*MAX_TRIE_NODE_LENGTH);
 
-        assert(verify_node_hash(terminal_node, extracted_hash), "Terminal node hash does not match the hash extracted from the preceding node");
+        assert(verify_node_hash(leaf_node, extracted_hash), "Leaf node hash does not match the hash extracted from the preceding node");
 
-        let rlp_list: rlp::RLP_List<2> = rlp::decode1_small_lis(terminal_node); // Terminal node must be a 2-node, and both slots contain less than 56 bytes.
+        let rlp_list: rlp::RLP_List<2> = rlp::decode1_small_lis(leaf_node); // Terminal node must be a 2-node, and both slots contain less than 56 bytes.
         
         // ...except extract a value rather than a key.
- 	    let (node_type, mut extracted_value, extracted_value_length, terminal_key_ptr): (u64, [u8; 33], u64, u64) = resolve2(terminal_node, rlp_list, key_nibbles, key_ptr);
+ 	    let (node_type, mut extracted_value, extracted_value_length, terminal_key_ptr): (u64, [u8; 33], u64, u64) = resolve2(leaf_node, rlp_list, key_nibbles, key_ptr);
         assert(node_type == LEAF);
 
         assert((extracted_value_length as u32) <= MAX_STORAGE_VALUE_LENGTH as u32 + 1); // Extracted value be at most 33 bytes with RLP header
@@ -146,17 +146,17 @@ impl<PROOF_LEN, MAX_VALUE_LEN> TrieProof<20, PROOF_LEN, MAX_VALUE_LEN>
             verify_internal_node(&mut extracted_hash, &mut key_ptr, key_nibbles, path, depth, i);
         }
         
-        let mut terminal_node = [0; MAX_TRIE_NODE_LENGTH];
+        let mut leaf_node = [0; MAX_TRIE_NODE_LENGTH];
 
         // Treat final node as the preceding nodes...
-        memcpy(&mut terminal_node, path, (depth - 1)*MAX_TRIE_NODE_LENGTH);
+        memcpy(&mut leaf_node, path, (depth - 1)*MAX_TRIE_NODE_LENGTH);
 
-        assert(verify_node_hash(terminal_node, extracted_hash));
+        assert(verify_node_hash(leaf_node, extracted_hash));
 
-        let rlp_list: rlp::RLP_List<2> = rlp::decode1(terminal_node); // Terminal node must be a 2-node
+        let rlp_list: rlp::RLP_List<2> = rlp::decode1(leaf_node); // Terminal node must be a 2-node
         
         // ...except extract a value rather than a key.
- 	    let (node_type, mut extracted_value, extracted_value_length, terminal_key_ptr): (u64, [u8; MAX_ACCOUNT_STATE_LENGTH], u64, u64) = resolve2(terminal_node, rlp_list, key_nibbles, key_ptr);
+ 	    let (node_type, mut extracted_value, extracted_value_length, terminal_key_ptr): (u64, [u8; MAX_ACCOUNT_STATE_LENGTH], u64, u64) = resolve2(leaf_node, rlp_list, key_nibbles, key_ptr);
         assert(node_type == LEAF);
 
         assert((extracted_value_length as u32) <= (MAX_VALUE_LEN as u32)); // Extracted value should fit in a byte array of length MAX_ACCOUNT_STATE_LENGTH.
