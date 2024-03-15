@@ -149,6 +149,8 @@ impl<PROOF_LEN, MAX_VALUE_LEN> TrieProof<20, PROOF_LEN, MAX_VALUE_LEN>
         
         let mut key_ptr: u64 = 0;
 
+        let (value, mut value_length) = byte_value(self.value); // Value to verify together with its byte length
+
         let path = self.proof; // Proof path
 
         let depth = self.depth; // Depth of proof path
