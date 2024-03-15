@@ -99,7 +99,7 @@ impl<PROOF_LEN, MAX_VALUE_LEN> TrieProof<32, PROOF_LEN, MAX_VALUE_LEN>
     /// * `key_nibbles` - Array containing the nibbles of the key
     /// * `path` - RLP-encoded proof path
     /// * `depth` - Depth of proof path
-    pub fn verify_leaf_storage_node(self, hash: [u8; KEY_LENGTH], key_len: u64, key_ptr: u64, key_nibbles: [u8; NIBBLE_LENGTH]) 
+    pub fn verify_leaf_storage_node(self, hash: [u8; KEY_LENGTH], key_len: Field, key_ptr: u64, key_nibbles: [u8; NIBBLE_LENGTH]) 
     {
         let (value, mut value_length) = byte_value(self.value); // Value to verify together with its byte length
         
@@ -156,7 +156,7 @@ impl<PROOF_LEN, MAX_VALUE_LEN> TrieProof<20, PROOF_LEN, MAX_VALUE_LEN>
             verify_middle_node(&mut extracted_hash, &mut key_ptr, key_nibbles, path, depth, i);
         }
 
-        self.verify_leaf_state_node(extracted_hash, key, key_ptr, key_nibbles);
+        self.verify_leaf_state_node(extracted_hash, key.len(), key_ptr, key_nibbles);
         
         true
     }
@@ -172,7 +172,7 @@ impl<PROOF_LEN, MAX_VALUE_LEN> TrieProof<20, PROOF_LEN, MAX_VALUE_LEN>
     /// * `key_nibbles` - Array containing the nibbles of the key
     /// * `path` - RLP-encoded proof path
     /// * `depth` - Depth of proof path
-    fn verify_leaf_state_node(self, extracted_hash: [u8; KEY_LENGTH], key: [u8; 32], key_ptr: u64, key_nibbles: [u8; NIBBLE_LENGTH]) 
+    fn verify_leaf_state_node(self, extracted_hash: [u8; KEY_LENGTH], key_len: Field, key_ptr: u64, key_nibbles: [u8; NIBBLE_LENGTH]) 
     {
         let (value, mut value_length) = byte_value(self.value); // Value to verify together with its byte length
         
@@ -189,7 +189,7 @@ impl<PROOF_LEN, MAX_VALUE_LEN> TrieProof<20, PROOF_LEN, MAX_VALUE_LEN>
         assert(node_type == LEAF);
 
         assert((extracted_value_length as u32) <= (MAX_VALUE_LEN as u32)); // Extracted value should fit in a byte array of length MAX_ACCOUNT_STATE_LENGTH.
-        assert(terminal_key_ptr == 2 * key.len() as u64); // All of the key has been exhausted.
+        assert(terminal_key_ptr == 2 * key_len as u64); // All of the key has been exhausted.
 
         // No need to decode data, but it ought to be a list.
         assert(extracted_value[0] >= 0xc0);
