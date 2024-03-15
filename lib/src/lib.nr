@@ -82,7 +82,7 @@ impl<PROOF_LEN, MAX_VALUE_LEN> TrieProof<32, PROOF_LEN, MAX_VALUE_LEN>
 
         for i in 0..(path.len() as u64 / MAX_TRIE_NODE_LENGTH - 1)
         {
-            verify_middle_node(&mut extracted_hash, &mut key_ptr, key_nibbles, path, depth, i);
+            verify_internal_node(&mut extracted_hash, &mut key_ptr, key_nibbles, path, depth, i);
         }
 
         let mut terminal_node = [0; MAX_TRIE_NODE_LENGTH];
@@ -143,7 +143,7 @@ impl<PROOF_LEN, MAX_VALUE_LEN> TrieProof<20, PROOF_LEN, MAX_VALUE_LEN>
 
         for i in 0..(path.len() as u64 / MAX_TRIE_NODE_LENGTH - 1)
         {
-            verify_middle_node(&mut extracted_hash, &mut key_ptr, key_nibbles, path, depth, i);
+            verify_internal_node(&mut extracted_hash, &mut key_ptr, key_nibbles, path, depth, i);
         }
         
         let mut terminal_node = [0; MAX_TRIE_NODE_LENGTH];
@@ -174,7 +174,7 @@ impl<PROOF_LEN, MAX_VALUE_LEN> TrieProof<20, PROOF_LEN, MAX_VALUE_LEN>
     }
 }
 
-/// Verifies that a middle node hashes to extracted hash. Extracts the next hash and advances the key pointer.
+/// Verifies that an internal node hashes to extracted hash. Extracts the next hash and advances the key pointer.
 ///
 /// # Arguments
 /// * `extracted_hash` - Hash extracted from the preceding node
@@ -183,15 +183,15 @@ impl<PROOF_LEN, MAX_VALUE_LEN> TrieProof<20, PROOF_LEN, MAX_VALUE_LEN>
 /// * `path` - RLP-encoded proof path
 /// * `depth` - Depth of proof path
 /// * `cur_depth` - Current depth in the proof path
-fn verify_middle_node<PROOF_LEN>(extracted_hash: &mut [u8; KEY_LENGTH], key_ptr: &mut u64, key_nibbles: [u8; NIBBLE_LENGTH], path: [u8; PROOF_LEN], depth: u64, cur_depth: u64) {
+fn verify_internal_node<PROOF_LEN>(extracted_hash: &mut [u8; KEY_LENGTH], key_ptr: &mut u64, key_nibbles: [u8; NIBBLE_LENGTH], path: [u8; PROOF_LEN], depth: u64, cur_depth: u64) {
     let in_range = (cur_depth as u8) < (depth - 1) as u8; // Range indicator
 
-    let k = if (in_range) {cur_depth} else {0}; // Restrict index to range {0, ..., depth - 2}
+    let cur_depth_or_0 = if (in_range) {cur_depth} else {0}; // Restrict index to range {0, ..., depth - 2}
     let mut node = [0; MAX_TRIE_NODE_LENGTH];
     // Populate node array
-    memcpy(&mut node, path, k * MAX_TRIE_NODE_LENGTH);
+    memcpy(&mut node, path, cur_depth_or_0 * MAX_TRIE_NODE_LENGTH);
 
-    assert(!in_range | verify_node_hash(node, *extracted_hash), "Middle node hash does not match the hash extracted from the preceding node");
+    assert(!in_range | verify_node_hash(node, *extracted_hash), "Internal node hash does not match the hash extracted from the preceding node");
     
     // Extract hash and advance key pointer if within range
     let (node_type, resolved_key, key_pointer): (u64, [u8; KEY_LENGTH], u64) = resolve_nibble32(key_nibbles, if in_range { *key_ptr } else { 0 }, node); // Resolve next nibble(s)
@@ -587,7 +587,7 @@ fn byte_value_test()
 }
 
 #[test]
-fn verify_middle_node_test() {
+fn verify_internal_node_test() {
     let mut extracted_hash = [171, 67, 174, 237, 12, 220, 44, 99, 9, 135, 95, 221, 50, 79, 14, 154, 217, 251, 29, 173, 227, 86, 95, 158, 87, 37, 210, 154, 149, 184, 243, 78];
     let mut key_ptr = 1;
     let key_nibbles = [2, 8, 10, 2, 1, 15, 10, 15, 8, 12, 7, 15, 10, 11, 5, 7, 4, 7, 1, 10, 2, 10, 4, 1, 3, 8, 7, 15, 9, 11, 0, 13, 0, 14, 10, 11, 2, 2, 9, 4, 5, 7, 12, 5, 0, 2, 4, 11, 13, 6, 12, 15, 11, 7, 2, 13, 13, 7, 11, 11, 10, 2, 15, 14];
@@ -981,7 +981,7 @@ fn verify_middle_node_test() {
                  0x00, ];
     let depth = 8;
     let cur_depth = 1;
-    verify_middle_node(&mut extracted_hash, &mut key_ptr, key_nibbles, path, depth, cur_depth);
+    verify_internal_node(&mut extracted_hash, &mut key_ptr, key_nibbles, path, depth, cur_depth);
     assert(extracted_hash == [0xa2, 0xfc, 0x4, 0xa2, 0x1, 0x99, 0xd4, 0x8b, 0xc5, 0xe0, 0x73, 0x27, 0x19, 0x2e, 0xfd, 0x12, 0x73, 0x2, 0xe8, 0x8c, 0x35, 0x48, 0x2c, 0xfa, 0xde, 0xf6, 0xb8, 0x72, 0xcb, 0x25, 0xd5, 0x3f]
 );
 }
