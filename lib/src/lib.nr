@@ -107,7 +107,7 @@ impl<PROOF_LEN, MAX_VALUE_LEN> TrieProof<32, PROOF_LEN, MAX_VALUE_LEN>
         let (dec_value_offset, dec_value_len) = rlp::decode0(extracted_value);
         assert(dec_value_len == value_length);
         
-        assert_arrays_equal(value, extracted_value, value_length, dec_value_offset);
+        assert_subarray(value, extracted_value, value_length, dec_value_offset);
         
         true
     }
@@ -168,7 +168,7 @@ impl<PROOF_LEN, MAX_VALUE_LEN> TrieProof<20, PROOF_LEN, MAX_VALUE_LEN>
         assert(extracted_value[0] >= 0xc0);
 
         assert(extracted_value_length == value_length);
-        assert_arrays_equal(value, extracted_value, value_length, 0);
+        assert_subarray(value, extracted_value, value_length, 0);
         
         true
     }
@@ -222,7 +222,7 @@ fn memcpy<N, M>(dest: &mut [u8; N], src: [u8; M], offset: u64)
 /// * `array` - Array to be verified against
 /// * `len` - Number of elements to be verified
 /// * `offset` - Offset in `array`
-fn assert_arrays_equal<N, M>(subarray: [u8; N], array: [u8; M], len: u64, offset: u64)
+fn assert_subarray<N, M>(subarray: [u8; N], array: [u8; M], len: u64, offset: u64)
 {
     for i in 0..N
     {
@@ -562,7 +562,7 @@ fn test_arrays_equal()
 {
     let subarray = [2, 3];
     let array = [1, 2, 3];
-    assert_arrays_equal(subarray, array, 2, 1);
+    assert_subarray(subarray, array, 2, 1);
 }
 
 #[test(should_fail_with_message = "Arrays do not match at specified offset")]
@@ -570,7 +570,7 @@ fn test_arrays_equal_fail()
 {
     let subarray = [1, 2, 3];
     let array = [1, 2, 4];
-    assert_arrays_equal(subarray, array, 2, 1);
+    assert_subarray(subarray, array, 2, 1);
 }
 
 #[test]
