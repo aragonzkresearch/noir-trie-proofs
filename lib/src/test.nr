@@ -14,13 +14,15 @@ global storage_root = [
 ];
 
 #[test]
-fn test_verify_storage_root_depth_2() {
+fn test_verify_storage_root_depth_2()
+{
     let trie_proof = TrieProof { key, proof, depth, value };
     let _ = trie_proof.verify_storage_root(storage_root);
 }
 
 #[test(should_fail_with="Internal node hash does not match the hash extracted from the preceding node")]
-fn test_assertion_message_for_invalid_storage_root() {
+fn test_assertion_message_for_invalid_storage_root()
+{
     let invalid_storage_root = [0; 32];
 
     let trie_proof = TrieProof { key, proof, depth, value };
@@ -28,7 +30,8 @@ fn test_assertion_message_for_invalid_storage_root() {
 }
 
 #[test(should_fail_with="Storage root: leaf node hash does not match the hash extracted from the preceding node")]
-fn test_assertion_message_for_invalid_leaf() {
+fn test_assertion_message_for_invalid_leaf() 
+{
     let mut proof_with_modified_teminal_node = proof;
     proof_with_modified_teminal_node[MAX_TRIE_NODE_LENGTH] += 0x01;
 

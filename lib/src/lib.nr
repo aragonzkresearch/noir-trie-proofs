@@ -207,7 +207,8 @@ impl<PROOF_LEN, MAX_VALUE_LEN> TrieProof<20, PROOF_LEN, MAX_VALUE_LEN>
 /// * `path` - RLP-encoded proof path
 /// * `depth` - Depth of proof path
 /// * `cur_depth` - Current depth in the proof path
-fn verify_internal_node<PROOF_LEN>(extracted_hash: &mut [u8; KEY_LENGTH], key_ptr: &mut u64, key_nibbles: [u8; NIBBLE_LENGTH], path: [u8; PROOF_LEN], depth: u64, cur_depth: u64) {
+fn verify_internal_node<PROOF_LEN>(extracted_hash: &mut [u8; KEY_LENGTH], key_ptr: &mut u64, key_nibbles: [u8; NIBBLE_LENGTH], path: [u8; PROOF_LEN], depth: u64, cur_depth: u64)
+{
     let in_range = (cur_depth as u8) < (depth - 1) as u8; // Range indicator
 
     let cur_depth_or_0 = if (in_range) {cur_depth} else {0}; // Restrict index to range {0, ..., depth - 2}
@@ -262,7 +263,7 @@ fn assert_subarray<N, M>(subarray: [u8; N], array: [u8; M], len: u64, offset: u6
 /// * `node` - RLP-encoded trie node
 /// * `hash` - 32-byte hash value
 pub fn verify_node_hash<N>(node: [u8; N], hash: [u8; KEY_LENGTH])
-                       -> bool
+                           -> bool
 {
     // Extract actual length of node
     let node_length = { let rlp_header = rlp::decode_len(node); rlp_header.offset + rlp_header.length }; // Determine length of node
@@ -272,10 +273,10 @@ pub fn verify_node_hash<N>(node: [u8; N], hash: [u8; KEY_LENGTH])
     let safe_length = in_range * node.len() as u64 + (1 - in_range) * node_length;
     
     // Compute Keccak256 hash of node
-	let node_hash = keccak256(node, safe_length as u32);
+    let node_hash = keccak256(node, safe_length as u32);
 
     // Compare hashes
-	node_hash == hash
+    node_hash == hash
 }
 
 /// Verifies that a middle node hashes to extracted hash. Extracts the next hash and advances the key pointer.
@@ -352,11 +353,11 @@ pub fn compact_decode<MAX_ENC_LEN, NIB_LEN>(input: [u8; MAX_ENC_LEN], length: u6
     let mut nibble = [0 as u8; NIB_LEN];
     let mut out_length = 0;
 
-	let mut prev_nibbles = byte_to_nibbles(input[0]);
+    let mut prev_nibbles = byte_to_nibbles(input[0]);
     let mut cur_nibbles = (0,0);
     
     let first_nibble = prev_nibbles.0;
-	let parity = first_nibble as u1;
+    let parity = first_nibble as u1;
 
     // Consistency checks
     // The first nibble should always be less than 4.
@@ -375,7 +376,7 @@ pub fn compact_decode<MAX_ENC_LEN, NIB_LEN>(input: [u8; MAX_ENC_LEN], length: u6
         prev_nibbles = cur_nibbles;
     }
 
-	out_length = 2*length + (parity as u64) - 2;
+    out_length = 2*length + (parity as u64) - 2;
 
 
     assert((out_length as u32) <= (NIB_LEN as u32)); // Sanity check
@@ -407,9 +408,9 @@ pub fn resolve_nibble32<N>(
     
     if num_fields == 2 // If we are dealing with an extension node
     {
-        // Resolve 2-node
-        
+        // Resolve 2-node        
         let node_resolution: (u64, [u8; KEY_LENGTH], u64, u64) = resolve2(node, rlp_list, key, key_ptr);
+        
         // Deconstruct
         node_type = node_resolution.0;
         key_ptr = node_resolution.3;
@@ -427,7 +428,7 @@ pub fn resolve_nibble32<N>(
         key_ptr = node_resolution.2;
         resolved_key = node_resolution.0;
         resolved_key_length = node_resolution.1;
-	}
+    }
 
     assert((node_type == LEAF) | (resolved_key_length == KEY_LENGTH));
     
@@ -466,21 +467,21 @@ fn resolve17<N, NUM_FIELDS>(
     assert(rlp_list.length[16] == 0);
     
     let cur_nibble = key[key_ptr];
-	let resolved_key_length = rlp_list.length[cur_nibble as u64];
+    let resolved_key_length = rlp_list.length[cur_nibble as u64];
 
     assert(resolved_key_length == KEY_LENGTH);
     assert((key_ptr as u32) < (NIBBLE_LENGTH as u32)); // Fixed-length key => Node cannot be terminal.
     
     key_ptr += 1;
 
-	let nibble_offset = rlp_list.offset[cur_nibble as u64];
+    let nibble_offset = rlp_list.offset[cur_nibble as u64];
 
     let mut resolved_key = [0; KEY_LENGTH];
     
     for j in 0..KEY_LENGTH
-	{
-		resolved_key[j] = node[nibble_offset + j];
-	}
+    {
+        resolved_key[j] = node[nibble_offset + j];
+    }
 
 
     let out = (resolved_key, resolved_key_length, key_ptr);
@@ -515,11 +516,11 @@ fn resolve2<N, NUM_FIELDS, MAX_VALUE_LEN>(
     
     let first_slot: [u8; 1 + NIBBLE_LENGTH/2] = rlp::take_dot_drop(node,rlp_list.offset[0]); // TODO: Replace consts with numeric generics when it is possible to use them in array length expressions
     
-	let (nib, niblen): ([u8; NIBBLE_LENGTH], u64) = compact_decode(first_slot, rlp_list.length[0]);
+    let (nib, niblen): ([u8; NIBBLE_LENGTH], u64) = compact_decode(first_slot, rlp_list.length[0]);
 
     // Length checks.
     // Should not go past 64 nibbles.
-	assert(((NIBBLE_LENGTH - key_ptr) as u32) >= niblen as u32);
+    assert(((NIBBLE_LENGTH - key_ptr) as u32) >= niblen as u32);
 
     // Check that the `niblen` nibbles in the first slot match up with the `niblen` nibbles
     // in `key` starting from offset `key_ptr`.
@@ -532,19 +533,19 @@ fn resolve2<N, NUM_FIELDS, MAX_VALUE_LEN>(
     }
 
     // Store length of value obtained
-	let value_length = rlp_list.length[1];
+    let value_length = rlp_list.length[1];
     // This should not exceed MAX_VALUE_LEN
     assert((value_length as u32) <= (MAX_VALUE_LEN as u32));
     
     // Increment offset
     key_ptr += niblen;
 
-	// Store value
+    // Store value
     assert(((rlp_list.offset[1] + MAX_VALUE_LEN) as u32) <= (N as u32)); // MAX_VALUE_LEN should be consistent with maximum node length
-	for i in 0..MAX_VALUE_LEN
-	{
-		value[i] = node[rlp_list.offset[1] + i];
-	}
+    for i in 0..MAX_VALUE_LEN
+    {
+        value[i] = node[rlp_list.offset[1] + i];
+    }
 
     // Ensure we've followed the right kind of node, i.e. if we're not at the end of the key,
     // we should have followed an extension node, and if we are, then we should have followed a leaf node.
@@ -637,7 +638,8 @@ fn byte_value_test()
 }
 
 #[test]
-fn verify_internal_node_test() {
+fn verify_internal_node_test()
+{
     let mut extracted_hash = [171, 67, 174, 237, 12, 220, 44, 99, 9, 135, 95, 221, 50, 79, 14, 154, 217, 251, 29, 173, 227, 86, 95, 158, 87, 37, 210, 154, 149, 184, 243, 78];
     let mut key_ptr = 1;
     let key_nibbles = [2, 8, 10, 2, 1, 15, 10, 15, 8, 12, 7, 15, 10, 11, 5, 7, 4, 7, 1, 10, 2, 10, 4, 1, 3, 8, 7, 15, 9, 11, 0, 13, 0, 14, 10, 11, 2, 2, 9, 4, 5, 7, 12, 5, 0, 2, 4, 11, 13, 6, 12, 15, 11, 7, 2, 13, 13, 7, 11, 11, 10, 2, 15, 14];
@@ -1032,8 +1034,7 @@ fn verify_internal_node_test() {
     let depth = 8;
     let cur_depth = 1;
     verify_internal_node(&mut extracted_hash, &mut key_ptr, key_nibbles, path, depth, cur_depth);
-    assert(extracted_hash == [0xa2, 0xfc, 0x4, 0xa2, 0x1, 0x99, 0xd4, 0x8b, 0xc5, 0xe0, 0x73, 0x27, 0x19, 0x2e, 0xfd, 0x12, 0x73, 0x2, 0xe8, 0x8c, 0x35, 0x48, 0x2c, 0xfa, 0xde, 0xf6, 0xb8, 0x72, 0xcb, 0x25, 0xd5, 0x3f]
-);
+    assert(extracted_hash == [0xa2, 0xfc, 0x4, 0xa2, 0x1, 0x99, 0xd4, 0x8b, 0xc5, 0xe0, 0x73, 0x27, 0x19, 0x2e, 0xfd, 0x12, 0x73, 0x2, 0xe8, 0x8c, 0x35, 0x48, 0x2c, 0xfa, 0xde, 0xf6, 0xb8, 0x72, 0xcb, 0x25, 0xd5, 0x3f]);
 }
 
 // Trie proof tests
