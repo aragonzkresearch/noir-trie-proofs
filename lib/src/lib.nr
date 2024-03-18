@@ -91,7 +91,7 @@ impl<PROOF_LEN, MAX_VALUE_LEN> TrieProof<32, PROOF_LEN, MAX_VALUE_LEN>
     /// Verifies that terminal storage node hashes to extracted hash. Extracts value and verifies it against the argument value.
     ///
     /// # Arguments
-    /// * `extracted_hash` - Hash extracted from the preceding node
+    /// * `hash` - Hash extracted from the preceding node
     /// * `value` - Value to be verified
     /// * `value_length` - Length of the value
     /// * `key` - Key to be verified
@@ -107,7 +107,7 @@ impl<PROOF_LEN, MAX_VALUE_LEN> TrieProof<32, PROOF_LEN, MAX_VALUE_LEN>
         // Treat final node as the preceding nodes...
         memcpy(&mut leaf_node, self.proof, (self.depth - 1) * MAX_TRIE_NODE_LENGTH);
 
-        assert(verify_node_hash(leaf_node, hash), "Leaf node hash does not match the hash extracted from the preceding node");
+        assert(verify_node_hash(leaf_node, hash), "Storage root: leaf node hash does not match the hash extracted from the preceding node");
 
         let rlp_list: rlp::RLP_List<2> = rlp::decode1_small_lis(leaf_node); // Terminal node must be a 2-node, and both slots contain less than 56 bytes.
         
@@ -180,7 +180,7 @@ impl<PROOF_LEN, MAX_VALUE_LEN> TrieProof<20, PROOF_LEN, MAX_VALUE_LEN>
         // Treat final node as the preceding nodes...
         memcpy(&mut leaf_node, self.proof, (self.depth - 1) * MAX_TRIE_NODE_LENGTH);
 
-        assert(verify_node_hash(leaf_node, extracted_hash), "Terminal node hash does not match the hash extracted from the preceding node");
+        assert(verify_node_hash(leaf_node, extracted_hash), "State root: leaf node hash does not match the hash extracted from the preceding node");
 
         let rlp_list: rlp::RLP_List<2> = rlp::decode1(leaf_node); // Terminal node must be a 2-node
         
