@@ -83,7 +83,7 @@ impl<PROOF_LEN, MAX_VALUE_LEN> TrieProof<32, PROOF_LEN, MAX_VALUE_LEN>
             verify_internal_node(&mut extracted_hash, &mut key_ptr, key_nibbles, path, depth, i);
         }
 
-        self.verify_leaf_storage_node(extracted_hash, key.len(), key_ptr, key_nibbles);
+        self.verify_storage_leaf_node(extracted_hash, key.len(), key_ptr, key_nibbles);
         
         true
     }
@@ -99,7 +99,7 @@ impl<PROOF_LEN, MAX_VALUE_LEN> TrieProof<32, PROOF_LEN, MAX_VALUE_LEN>
     /// * `key_nibbles` - Array containing the nibbles of the key
     /// * `path` - RLP-encoded proof path
     /// * `depth` - Depth of proof path
-    pub fn verify_leaf_storage_node(self, hash: [u8; KEY_LENGTH], key_len: Field, key_ptr: u64, key_nibbles: [u8; NIBBLE_LENGTH]) 
+    pub fn verify_storage_leaf_node(self, hash: [u8; KEY_LENGTH], key_len: Field, key_ptr: u64, key_nibbles: [u8; NIBBLE_LENGTH]) 
     {
         let (value, mut value_length) = byte_value(self.value); // Value to verify together with its byte length
         
@@ -156,7 +156,7 @@ impl<PROOF_LEN, MAX_VALUE_LEN> TrieProof<20, PROOF_LEN, MAX_VALUE_LEN>
             verify_internal_node(&mut extracted_hash, &mut key_ptr, key_nibbles, path, depth, i);
         }
 
-        self.verify_leaf_state_node(extracted_hash, key.len(), key_ptr, key_nibbles);
+        self.verify_state_leaf_node(extracted_hash, key.len(), key_ptr, key_nibbles);
         
         true
     }
@@ -172,7 +172,7 @@ impl<PROOF_LEN, MAX_VALUE_LEN> TrieProof<20, PROOF_LEN, MAX_VALUE_LEN>
     /// * `key_nibbles` - Array containing the nibbles of the key
     /// * `path` - RLP-encoded proof path
     /// * `depth` - Depth of proof path
-    fn verify_leaf_state_node(self, extracted_hash: [u8; KEY_LENGTH], key_len: Field, key_ptr: u64, key_nibbles: [u8; NIBBLE_LENGTH]) 
+    fn verify_state_leaf_node(self, extracted_hash: [u8; KEY_LENGTH], key_len: Field, key_ptr: u64, key_nibbles: [u8; NIBBLE_LENGTH]) 
     {
         let (value, mut value_length) = byte_value(self.value); // Value to verify together with its byte length
         
@@ -277,32 +277,6 @@ pub fn verify_node_hash<N>(node: [u8; N], hash: [u8; KEY_LENGTH])
 
     // Compare hashes
     node_hash == hash
-}
-
-/// Verifies that a middle node hashes to extracted hash. Extracts the next hash and advances the key pointer.
-///
-/// # Arguments
-/// * `extracted_hash` - Hash extracted from the preceding node
-/// * `key_ptr` - Pointer to current nibble in the key
-/// * `key_nibbles` - Array containing the nibbles of the key
-/// * `path` - RLP-encoded proof path
-/// * `depth` - Depth of proof path
-/// * `cur_depth` - Current depth in the proof path
-fn verify_middle_node<PROOF_LEN>(extracted_hash: &mut [u8; KEY_LENGTH], key_ptr: &mut u64, key_nibbles: [u8; NIBBLE_LENGTH], path: [u8; PROOF_LEN], depth: u64, cur_depth: u64) {
-    let in_range = (cur_depth as u8) < (depth - 1) as u8; // Range indicator
-
-    let cur_depth_or_0 = if (in_range) {cur_depth} else {0}; // Restrict index to range {0, ..., depth - 2}
-    let mut node = [0; MAX_TRIE_NODE_LENGTH];
-    // Populate node array
-    memcpy(&mut node, path, cur_depth_or_0 * MAX_TRIE_NODE_LENGTH);
-
-    assert(!in_range | verify_node_hash(node, *extracted_hash), "Middle node hash does not match the hash extracted from the preceding node");
-    
-    // Extract hash and advance key pointer if within range
-    let (node_type, resolved_key, key_pointer): (u64, [u8; KEY_LENGTH], u64) = resolve_nibble32(key_nibbles, if in_range { *key_ptr } else { 0 }, node); // Resolve next nibble(s)
-    assert(!in_range | (node_type != LEAF));
-    *extracted_hash = if in_range {resolved_key} else {*extracted_hash};
-    *key_ptr = if in_range {key_pointer} else {*key_ptr};
 }
 
 /// Byte-to-nibble converter. Returns a pair of two nibbles.
