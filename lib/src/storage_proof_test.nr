@@ -1,8 +1,6 @@
 use crate::{
     trie_proof::TrieProof, 
-    const::{MAX_TRIE_NODE_LENGTH, NIBBLE_LENGTH},
-    utils::{memcpy, assert_subarray, byte_value},
-    node_utils::{verify_internal_node, compact_decode, key_as_nibbles},
+    const::MAX_TRIE_NODE_LENGTH
 };
 
 // Test data for { blockNumber: 4605172n, address: '0xc7af99fe5513eb6710e6d5f44f9989da40f27f26', storageKeys: ['0x0000000000000000000000000000000000000000000000000000000000000000'] }

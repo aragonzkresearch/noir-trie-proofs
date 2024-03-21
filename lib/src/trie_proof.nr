@@ -1,7 +1,3 @@
-use crate::utils::{byte_to_nibbles, byte_value, assert_subarray, memcpy};
-use crate::node_utils::{key_as_nibbles, verify_node_hash, resolve2, resolve_nibble32};
-use crate::const::{MAX_TRIE_NODE_LENGTH, MAX_STORAGE_VALUE_LENGTH, MAX_ACCOUNT_STATE_LENGTH, KEY_LENGTH, NIBBLE_LENGTH, LEAF};
-
 /// Type for storage proofs corresponding to `ethers-rs` StorageProof type
 /// Involves 32-byte keys
 // TODO: Add comptime u64 parameters to
