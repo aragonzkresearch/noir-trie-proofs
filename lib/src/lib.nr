@@ -4,6 +4,7 @@ mod utils;
 mod test;
 mod utils_test;
 mod node_utils;
+mod node_utils_test;
 mod const;
 mod rlp; // Module for required RLP encoding/decoding
 
