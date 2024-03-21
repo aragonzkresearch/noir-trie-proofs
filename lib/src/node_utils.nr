@@ -1,7 +1,34 @@
-use crate::const::{KEY_LENGTH, NIBBLE_LENGTH, MAX_NUM_FIELDS, BRANCH, LEAF};
-use crate::utils::byte_to_nibbles;
+use crate::const::{KEY_LENGTH, NIBBLE_LENGTH, MAX_NUM_FIELDS, BRANCH, LEAF, MAX_TRIE_NODE_LENGTH};
+use crate::utils::{byte_to_nibbles, memcpy};
 use crate::rlp;
 use dep::std::hash::keccak256;
+
+/// Verifies that an internal node hashes to extracted hash. Extracts the next hash and advances the key pointer.
+///
+/// # Arguments
+/// * `extracted_hash` - Hash extracted from the preceding node
+/// * `key_ptr` - Pointer to current nibble in the key
+/// * `key_nibbles` - Array containing the nibbles of the key
+/// * `path` - RLP-encoded proof path
+/// * `depth` - Depth of proof path
+/// * `cur_depth` - Current depth in the proof path
+pub(crate) fn verify_internal_node<PROOF_LEN>(extracted_hash: &mut [u8; KEY_LENGTH], key_ptr: &mut u64, key_nibbles: [u8; NIBBLE_LENGTH], path: [u8; PROOF_LEN], depth: u64, cur_depth: u64)
+{
+    let in_range = (cur_depth as u8) < (depth - 1) as u8; // Range indicator
+
+    let cur_depth_or_0 = if (in_range) {cur_depth} else {0}; // Restrict index to range {0, ..., depth - 2}
+    let mut node = [0; MAX_TRIE_NODE_LENGTH];
+    // Populate node array
+    memcpy(&mut node, path, cur_depth_or_0 * MAX_TRIE_NODE_LENGTH);
+
+    assert(!in_range | verify_node_hash(node, *extracted_hash), "Internal node hash does not match the hash extracted from the preceding node");
+    
+    // Extract hash and advance key pointer if within range
+    let (node_type, resolved_key, key_pointer): (u64, [u8; KEY_LENGTH], u64) = resolve_nibble32(key_nibbles, if in_range { *key_ptr } else { 0 }, node); // Resolve next nibble(s)
+    assert(!in_range | (node_type != LEAF));
+    *extracted_hash = if in_range {resolved_key} else {*extracted_hash};
+    *key_ptr = if in_range {key_pointer} else {*key_ptr};
+}
 
 /// Trie node hash verifier. Returns true if the node has the specified keccak256 hash.
 ///
