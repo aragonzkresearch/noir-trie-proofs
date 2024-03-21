@@ -1,5 +1,5 @@
 use crate::{
-    TrieProof,
+    trie_proof::TrieProof,
     const::{KEY_LENGTH, NIBBLE_LENGTH, MAX_TRIE_NODE_LENGTH, MAX_ACCOUNT_STATE_LENGTH, LEAF},
     utils::{memcpy, byte_value, assert_subarray},
     node_utils::{key_as_nibbles, verify_internal_node, verify_node_hash, resolve2}
