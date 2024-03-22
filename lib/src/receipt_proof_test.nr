@@ -25,7 +25,7 @@ fn test_cancun_receipt_proof()
   assert(trie_proof.verify_receipt_root(receipt_root));
 }
 
-#[test(should_fail)]
+#[test(should_fail_with="Arrays do not match at specified offset")]
 fn test_cancun_receipt_proof_fail()
 {
   let mut trie_proof_with_wrong_value = trie_proof;

@@ -22,9 +22,9 @@ impl<PROOF_LEN, RECEIPT_RLP_LENGTH> TrieProof<3, PROOF_LEN, RECEIPT_RLP_LENGTH>
         receipt_root: [u8; HASH_LENGTH] // Hash of root, i.e. first, node.
     ) -> bool
     {
-        assert((PROOF_LEN as u32) % (MAX_TRIE_NODE_LENGTH as u32) == 0); // Check that N is a multiple of MAX_TRIE_NODE_LENGTH
+        assert((PROOF_LEN as u32) % (MAX_TRIE_NODE_LENGTH as u32) == 0, "PROOF_LEN must be a multiple of MAX_TRIE_NODE_LENGTH");
 
-        let (key, key_len) = byte_value(self.key); // The path is traced out by the hashed key
+        let (key, key_len) = byte_value(self.key);
         
         let key_nibbles: [u8; RLP_IDX_KEY_NIBBLE_LENGTH] = key_as_nibbles(key);
         
@@ -65,18 +65,18 @@ impl<PROOF_LEN, RECEIPT_RLP_LENGTH> TrieProof<3, PROOF_LEN, RECEIPT_RLP_LENGTH>
         // Treat final node as the preceding nodes...
         memcpy(&mut leaf_node, self.proof, (self.depth - 1) * MAX_TRIE_NODE_LENGTH);
 
-        assert(verify_node_hash(leaf_node, extracted_hash), "State root: leaf node hash does not match the hash extracted from the preceding node");
+        assert(verify_node_hash(leaf_node, extracted_hash), "Receipt root: leaf node hash does not match the hash extracted from the preceding node");
 
         let rlp_list: rlp::RLP_List<2> = rlp::decode1(leaf_node); // Terminal node must be a 2-node
         
         // ...except extract a value rather than a key.
         let (node_type, mut extracted_value, extracted_value_length, terminal_key_ptr): (u64, [u8; RECEIPT_RLP_LENGTH], u64, u64) = resolve2(leaf_node, rlp_list, key_nibbles, key_ptr);
-        assert(node_type == LEAF);
+        assert(node_type == LEAF, "Receipt root: terminal node is not a leaf node");
 
-        assert((extracted_value_length as u32) <= (RECEIPT_RLP_LENGTH as u32)); // Extracted value should fit in a byte array of length MAX_ACCOUNT_STATE_LENGTH.
-        assert(terminal_key_ptr == 2 * key_len as u64); // All of the key has been exhausted.
+        assert((extracted_value_length as u32) <= (RECEIPT_RLP_LENGTH as u32), "Receipt root: extracted value must fit in a byte array of length RECEIPT_RLP_LENGTH");
+        assert(terminal_key_ptr == 2 * key_len as u64, "Receipt root: not all of the key has been exhausted");
 
-        assert(extracted_value_length == RECEIPT_RLP_LENGTH);
+        assert(extracted_value_length == RECEIPT_RLP_LENGTH, "Receipt root: extracted value length does not match RECEIPT_RLP_LENGTH");
         assert_subarray(value, extracted_value, RECEIPT_RLP_LENGTH, 0);
     }
 }
