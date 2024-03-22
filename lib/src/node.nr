@@ -57,7 +57,7 @@ pub(crate) fn verify_node_hash<N>(node: [u8; N], hash: [u8; KEY_LENGTH])
 ///
 /// # Arguments
 /// * `key` - Array of bytes representing a key
-pub(crate) fn key_as_nibbles<KEY_LEN, NIB_LEN>(key: [u8; KEY_LEN]) -> [u8; NIB_LEN]
+pub fn key_as_nibbles<KEY_LEN, NIB_LEN>(key: [u8; KEY_LEN]) -> [u8; NIB_LEN]
 {
     assert(NIB_LEN == 2*KEY_LEN);
     
@@ -126,7 +126,7 @@ pub(crate) fn compact_decode<MAX_ENC_LEN, NIB_LEN>(input: [u8; MAX_ENC_LEN], len
 /// * `key` - Array containing the nibbles to be resolved
 /// * `key_ptr` - Pointer to the nibbles in `key` to be resolved
 /// * `node` - RLP-encoded byte array of branch or extension node
-pub(crate) fn resolve_nibble32<N>(
+pub fn resolve_nibble32<N>(
     key: [u8; NIBBLE_LENGTH],
     mut key_ptr: u64,
     node: [u8; N]) ->
