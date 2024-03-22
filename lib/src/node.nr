@@ -276,12 +276,6 @@ pub(crate) fn resolve2<N, NUM_FIELDS, MAX_VALUE_LEN, KEY_NIBBLE_LEN>(
     key_ptr += niblen;
 
     // Store value
-    print("rlp_list.offset[1]: ");
-    println(rlp_list.offset[1]);
-    print("MAX_VALUE_LEN: ");
-    println(MAX_VALUE_LEN);
-    print("N: ");
-    println(N);
     assert(((rlp_list.offset[1] + MAX_VALUE_LEN) as u32) <= (N as u32)); // MAX_VALUE_LEN should be consistent with maximum node length
     for i in 0..MAX_VALUE_LEN
     {

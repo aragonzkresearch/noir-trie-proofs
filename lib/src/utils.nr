@@ -80,7 +80,7 @@ pub(crate) fn left_byte_shift<N>(input: [u8; N], n: u64) -> [u8; N]
     {
         // Restrict indices to be shifted, i.e. ∀i: i + n < N, out[i] ← input[i + n].
         let index_ind = (((i + n) as u32) < (N as u32)) as u64;
-        out[i] = (index_ind as u8)*input[index_ind*(i + n)];
+        out[i] = (index_ind as u8) * input[index_ind * (i + n)];
     }
 
     out
