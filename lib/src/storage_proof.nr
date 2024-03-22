@@ -2,7 +2,7 @@ use crate::{
     trie_proof::TrieProof,
     const::{KEY_LENGTH, NIBBLE_LENGTH, MAX_TRIE_NODE_LENGTH, MAX_STORAGE_VALUE_LENGTH, LEAF},
     utils::{memcpy, byte_value, assert_subarray},
-    node_utils::{key_as_nibbles, verify_internal_node, verify_node_hash, resolve2}
+    node::{key_as_nibbles, verify_internal_node, verify_node_hash, resolve2}
 };
 use dep::std::hash::keccak256;
 use crate::rlp;

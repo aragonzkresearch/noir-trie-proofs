@@ -1,32 +1,32 @@
 use crate::{
     trie_proof::TrieProof,
-    const::{KEY_LENGTH, NIBBLE_LENGTH, MAX_TRIE_NODE_LENGTH, MAX_ACCOUNT_STATE_LENGTH, LEAF},
+    const::{MAX_TRIE_NODE_LENGTH, LEAF, HASH_LENGTH, HASH_NIBBLE_LENGTH, RLP_IDX_KEY_NIBBLE_LENGTH, MAX_RECEIPT_RLP_LENGTH},
     utils::{memcpy, byte_value, assert_subarray},
     node::{key_as_nibbles, verify_internal_node, verify_node_hash, resolve2}
 };
 use dep::std::hash::keccak256;
 use crate::rlp;
 
-/// Type alias for storage proofs. Assumes value is left-padded with zeros.
-type StateProof<PROOF_LEN> = TrieProof<20, PROOF_LEN, MAX_ACCOUNT_STATE_LENGTH>;
+/// Type alias for receipt proofs. Assumes value is left-padded with zeros.
+type ReceiptProof<PROOF_LEN, RECEIPT_RLP_LENGTH> = TrieProof<3, PROOF_LEN, RECEIPT_RLP_LENGTH>;
 
-impl<PROOF_LEN, MAX_VALUE_LEN> TrieProof<20, PROOF_LEN, MAX_VALUE_LEN>
+impl<PROOF_LEN, RECEIPT_RLP_LENGTH> TrieProof<3, PROOF_LEN, RECEIPT_RLP_LENGTH>
 {
     /// Ethereum state proof verifier. Returns true if all constraints are satisfied.
     ///
     /// # Arguments
     /// * `self` - The proof to be verified.
     /// * `state_root` - The root of the state trie as a hash
-    pub fn verify_state_root( // PROOF_LEN *must* be a multiple of MAX_TRIE_NODE_LENGTH!
+    pub fn verify_receipt_root( // PROOF_LEN *must* be a multiple of MAX_TRIE_NODE_LENGTH!
         self,
-        state_root: [u8; KEY_LENGTH] // Hash of root, i.e. first, node.
+        receipt_root: [u8; HASH_LENGTH] // Hash of root, i.e. first, node.
     ) -> bool
     {
         assert((PROOF_LEN as u32) % (MAX_TRIE_NODE_LENGTH as u32) == 0); // Check that N is a multiple of MAX_TRIE_NODE_LENGTH
 
-        let key = keccak256(self.key, 20); // The path is traced out by the hashed key
+        let (key, key_len) = byte_value(self.key); // The path is traced out by the hashed key
         
-        let key_nibbles: [u8; NIBBLE_LENGTH] = key_as_nibbles(key);
+        let key_nibbles: [u8; RLP_IDX_KEY_NIBBLE_LENGTH] = key_as_nibbles(key);
         
         let mut key_ptr: u64 = 0;
 
@@ -34,14 +34,14 @@ impl<PROOF_LEN, MAX_VALUE_LEN> TrieProof<20, PROOF_LEN, MAX_VALUE_LEN>
 
         let depth = self.depth; // Depth of proof path
 
-        let mut extracted_hash = state_root;
+        let mut extracted_hash = receipt_root;
 
         for i in 0..(path.len() as u64 / MAX_TRIE_NODE_LENGTH - 1)
         {
             verify_internal_node(&mut extracted_hash, &mut key_ptr, key_nibbles, path, depth, i);
         }
 
-        self.verify_state_leaf_node(extracted_hash, key.len(), key_ptr, key_nibbles);
+        self.verify_receipt_leaf_node(extracted_hash, key_len, key_ptr, key_nibbles);
         
         true
     }
@@ -57,9 +57,9 @@ impl<PROOF_LEN, MAX_VALUE_LEN> TrieProof<20, PROOF_LEN, MAX_VALUE_LEN>
     /// * `key_nibbles` - Array containing the nibbles of the key
     /// * `path` - RLP-encoded proof path
     /// * `depth` - Depth of proof path
-    fn verify_state_leaf_node(self, extracted_hash: [u8; KEY_LENGTH], key_len: Field, key_ptr: u64, key_nibbles: [u8; NIBBLE_LENGTH]) 
+    fn verify_receipt_leaf_node(self, extracted_hash: [u8; HASH_LENGTH], key_len: u64, key_ptr: u64, key_nibbles: [u8; RLP_IDX_KEY_NIBBLE_LENGTH]) 
     {
-        let (value, mut value_length) = byte_value(self.value); // Value to verify together with its byte length
+        let value = self.value; // Value to verify together with its byte length
         
         let mut leaf_node = [0; MAX_TRIE_NODE_LENGTH];
         // Treat final node as the preceding nodes...
@@ -70,15 +70,13 @@ impl<PROOF_LEN, MAX_VALUE_LEN> TrieProof<20, PROOF_LEN, MAX_VALUE_LEN>
         let rlp_list: rlp::RLP_List<2> = rlp::decode1(leaf_node); // Terminal node must be a 2-node
         
         // ...except extract a value rather than a key.
-        let (node_type, mut extracted_value, extracted_value_length, terminal_key_ptr): (u64, [u8; MAX_ACCOUNT_STATE_LENGTH], u64, u64) = resolve2(leaf_node, rlp_list, key_nibbles, key_ptr);
+        let (node_type, mut extracted_value, extracted_value_length, terminal_key_ptr): (u64, [u8; RECEIPT_RLP_LENGTH], u64, u64) = resolve2(leaf_node, rlp_list, key_nibbles, key_ptr);
         assert(node_type == LEAF);
 
-        assert((extracted_value_length as u32) <= (MAX_VALUE_LEN as u32)); // Extracted value should fit in a byte array of length MAX_ACCOUNT_STATE_LENGTH.
+        assert((extracted_value_length as u32) <= (RECEIPT_RLP_LENGTH as u32)); // Extracted value should fit in a byte array of length MAX_ACCOUNT_STATE_LENGTH.
         assert(terminal_key_ptr == 2 * key_len as u64); // All of the key has been exhausted.
 
-        // No need to decode data, but it ought to be a list.
-        assert(extracted_value[0] >= 0xc0);
-        assert(extracted_value_length == value_length);
-        assert_subarray(value, extracted_value, value_length, 0);
+        assert(extracted_value_length == RECEIPT_RLP_LENGTH);
+        assert_subarray(value, extracted_value, RECEIPT_RLP_LENGTH, 0);
     }
 }

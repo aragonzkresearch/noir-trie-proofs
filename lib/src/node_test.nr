@@ -1,5 +1,5 @@
 use crate::const::{NIBBLE_LENGTH};
-use crate::node_utils::{key_as_nibbles, verify_internal_node, compact_decode};
+use crate::node::{key_as_nibbles, verify_internal_node, compact_decode};
 
 #[test]
 fn nibble_check()
