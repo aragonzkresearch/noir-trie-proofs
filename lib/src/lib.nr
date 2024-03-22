@@ -11,3 +11,5 @@ mod state_proof;
 mod state_proof_test;
 mod storage_proof;
 mod storage_proof_test;
+mod receipt_proof;
+mod receipt_proof_test;

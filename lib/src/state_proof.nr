@@ -1,6 +1,6 @@
 use crate::{
     trie_proof::TrieProof,
-    const::{KEY_LENGTH, NIBBLE_LENGTH, MAX_TRIE_NODE_LENGTH, MAX_ACCOUNT_STATE_LENGTH, LEAF},
+    const::{HASH_LENGTH, HASH_NIBBLE_LENGTH, MAX_TRIE_NODE_LENGTH, MAX_ACCOUNT_STATE_LENGTH, LEAF},
     utils::{memcpy, byte_value, assert_subarray},
     node::{key_as_nibbles, verify_internal_node, verify_node_hash, resolve2}
 };
@@ -19,14 +19,14 @@ impl<PROOF_LEN, MAX_VALUE_LEN> TrieProof<20, PROOF_LEN, MAX_VALUE_LEN>
     /// * `state_root` - The root of the state trie as a hash
     pub fn verify_state_root( // PROOF_LEN *must* be a multiple of MAX_TRIE_NODE_LENGTH!
         self,
-        state_root: [u8; KEY_LENGTH] // Hash of root, i.e. first, node.
+        state_root: [u8; HASH_LENGTH] // Hash of root, i.e. first, node.
     ) -> bool
     {
         assert((PROOF_LEN as u32) % (MAX_TRIE_NODE_LENGTH as u32) == 0); // Check that N is a multiple of MAX_TRIE_NODE_LENGTH
 
         let key = keccak256(self.key, 20); // The path is traced out by the hashed key
         
-        let key_nibbles: [u8; NIBBLE_LENGTH] = key_as_nibbles(key);
+        let key_nibbles: [u8; HASH_NIBBLE_LENGTH] = key_as_nibbles(key);
         
         let mut key_ptr: u64 = 0;
 
@@ -57,7 +57,7 @@ impl<PROOF_LEN, MAX_VALUE_LEN> TrieProof<20, PROOF_LEN, MAX_VALUE_LEN>
     /// * `key_nibbles` - Array containing the nibbles of the key
     /// * `path` - RLP-encoded proof path
     /// * `depth` - Depth of proof path
-    fn verify_state_leaf_node(self, extracted_hash: [u8; KEY_LENGTH], key_len: Field, key_ptr: u64, key_nibbles: [u8; NIBBLE_LENGTH]) 
+    fn verify_state_leaf_node(self, extracted_hash: [u8; HASH_LENGTH], key_len: Field, key_ptr: u64, key_nibbles: [u8; HASH_NIBBLE_LENGTH]) 
     {
         let (value, mut value_length) = byte_value(self.value); // Value to verify together with its byte length
         

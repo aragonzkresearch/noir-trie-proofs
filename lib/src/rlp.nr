@@ -69,7 +69,7 @@ pub fn data_len<N>(arr: [u8; N], lenlen: u64) -> u64 {
 
     for i in 0..loop_len {
         let len_len_ind = (((i as u32) < (lenlen as u32)) as u64);
-        out = len_len_ind*(256*out + (arr[i + 1] as u64)) + (1-len_len_ind)*out;
+        out = len_len_ind*(256 * out + (arr[i + 1] as u64)) + (1-len_len_ind)*out;
     }
 
     out
@@ -172,17 +172,17 @@ pub fn decode1<N, NUM_FIELDS>(input: [u8; N]) -> RLP_List<NUM_FIELDS> {
         let loop_ind = (offset != total_len) as u64; // Loop indicator: Take action only if there is data left to parse.
 
         // Make sure the index doesn't overshoot
-        let header: [u8; MAX_LEN_IN_BYTES + 1] = take_dot_drop(input, offset); // Read element header
+        let header: [u8; MAX_LEN_IN_BYTES + 1] = copy_subarray(input, offset); // Read element header
         let RLP_Header {offset: field_off, length: field_len, data_type: field_type} = decode_len(header); // Decode length of element
         let total_field_len = field_off + field_len; // Length of element + header
 
         // Assign decoded data and set them to 0 if loop indicator false (Convenient for testing; could remove this later)
         dec_off[i] = loop_ind*(offset + (1-field_type)*field_off); // If the ith slot contains a list, include its RLP header.
-        dec_len[i] = loop_ind*(field_len + field_type*field_off); // If the ith slot contains a list, make sure to include the length of its header in the decoded data.
+        dec_len[i] = loop_ind*(field_len + field_type * field_off); // If the ith slot contains a list, make sure to include the length of its header in the decoded data.
         dec_type[i] = loop_ind*(field_type);
 
         // Calculate new offset
-        offset += loop_ind*total_field_len;
+        offset += loop_ind * total_field_len;
         num_fields += loop_ind;
     }
 
@@ -234,7 +234,7 @@ pub fn decode1_small_lis<N, NUM_FIELDS>(input: [u8; N]) -> RLP_List<NUM_FIELDS> 
         dec_type[i] = loop_ind*(field_type);
 
         // Calculate new offset
-        offset += loop_ind*total_field_len;
+        offset += loop_ind * total_field_len;
         num_fields += loop_ind;
     }
 
@@ -299,7 +299,7 @@ fn data_len_test_padded() {
 #[test]
 fn rlp_length_check() {
     // List test case
-    let in0: [u8; MAX_LEN_IN_BYTES + 1] = take_dot_drop([0xc7, 0xc0, 0xc1, 0xc0, 0xc3, 0xc0, 0xc1, 0xc0], 0);
+    let in0: [u8; MAX_LEN_IN_BYTES + 1] = copy_subarray([0xc7, 0xc0, 0xc1, 0xc0, 0xc3, 0xc0, 0xc1, 0xc0], 0);
     let x = decode_len(in0);
     assert(x.offset == 1);
     assert(x.length == 7);
@@ -323,12 +323,12 @@ fn rlp_length_check() {
 }
 
 // Function for selecting M elements of an array starting at index n
-pub fn take_dot_drop<T, N, M>(arr: [T; N], n: u64) -> [T; M] // = drop n . take M
+pub fn copy_subarray<T, N, M>(arr: [T; N], offset: u64) -> [T; M]
 {
     let mut out = [dep::std::unsafe::zeroed(); M];
 
     for i in 0..M {
-        let j = (((i + n) as u64) < N) as u64 * (i + n); // Restrict to proper range and fill with arr[0] otherwise.
+        let j = (((offset + i) as u64) < N) as u64 * (offset + i); // Restrict to proper range and fill with arr[0] otherwise.
         out[i] = arr[j];
     }
 
