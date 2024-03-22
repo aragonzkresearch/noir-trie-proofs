@@ -12,12 +12,12 @@ type ReceiptProof<PROOF_LEN, RECEIPT_RLP_LENGTH> = TrieProof<3, PROOF_LEN, RECEI
 
 impl<PROOF_LEN, RECEIPT_RLP_LENGTH> TrieProof<3, PROOF_LEN, RECEIPT_RLP_LENGTH>
 {
-    /// Ethereum state proof verifier. Returns true if all constraints are satisfied.
+    /// Ethereum receipt proof verifier. Returns true if all constraints are satisfied.
     ///
     /// # Arguments
     /// * `self` - The proof to be verified.
-    /// * `state_root` - The root of the state trie as a hash
-    pub fn verify_receipt_root( // PROOF_LEN *must* be a multiple of MAX_TRIE_NODE_LENGTH!
+    /// * `receipt_root` - The root of the receipt trie as a hash
+    pub fn verify_receipt_root(
         self,
         receipt_root: [u8; HASH_LENGTH] // Hash of root, i.e. first, node.
     ) -> bool
@@ -46,7 +46,7 @@ impl<PROOF_LEN, RECEIPT_RLP_LENGTH> TrieProof<3, PROOF_LEN, RECEIPT_RLP_LENGTH>
         true
     }
 
-    /// Verifies that terminal state node hashes to extracted hash. Extracts value and verifies it against the argument value.
+    /// Verifies that terminal receipt node hashes to extracted hash. Extracts value and verifies it against the argument value.
     ///
     /// # Arguments
     /// * `extracted_hash` - Hash extracted from the preceding node
@@ -59,7 +59,7 @@ impl<PROOF_LEN, RECEIPT_RLP_LENGTH> TrieProof<3, PROOF_LEN, RECEIPT_RLP_LENGTH>
     /// * `depth` - Depth of proof path
     fn verify_receipt_leaf_node(self, extracted_hash: [u8; HASH_LENGTH], key_len: u64, key_ptr: u64, key_nibbles: [u8; RLP_IDX_KEY_NIBBLE_LENGTH]) 
     {
-        let value = self.value; // Value to verify together with its byte length
+        let value = self.value;
         
         let mut leaf_node = [0; MAX_TRIE_NODE_LENGTH];
         // Treat final node as the preceding nodes...

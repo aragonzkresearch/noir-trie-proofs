@@ -1,5 +1,6 @@
 use crate::trie_proof::TrieProof;
 
+// https://etherscan.io/tx/0x98e19df80eb8feae436896cc7cc6d4a97818e6010b56a249352b9ac2caf0d573
 global key = [
   0x00,0x00,0x08
 ];
