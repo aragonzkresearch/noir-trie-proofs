@@ -20,8 +20,5 @@ global MAX_STORAGE_VALUE_LENGTH: u64 = 32;
 /// Maximum number of bytes in an account state
 global MAX_ACCOUNT_STATE_LENGTH: u64 = 134;
 
-// TODO: make it generic
-global MAX_RECEIPT_RLP_LENGTH: u64 = 525; // TODO: Understand why
-
 /// Maximum number of RLP-encoded elements in a trie node
 global MAX_NUM_FIELDS: u64 = 17;
