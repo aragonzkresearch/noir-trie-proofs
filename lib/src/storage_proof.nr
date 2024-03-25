@@ -76,8 +76,8 @@ impl<PROOF_LEN, MAX_VALUE_LEN> TrieProof<32, PROOF_LEN, MAX_VALUE_LEN>
         let (node_type, mut extracted_value, extracted_value_length, terminal_key_ptr): (u64, [u8; 33], u64, u64) = resolve2(leaf_node, rlp_list, key_nibbles, key_ptr);
         assert(node_type == LEAF);
 
-        assert((extracted_value_length as u32) <= MAX_STORAGE_VALUE_LENGTH as u32 + 1); // Extracted value be at most 33 bytes with RLP header
-        assert(terminal_key_ptr == 2 * key_len as u64); // All of the key has been exhausted.
+        assert((extracted_value_length as u32) <= MAX_STORAGE_VALUE_LENGTH as u32+1); // Extracted value be at most 33 bytes with RLP header
+        assert(terminal_key_ptr == 2*key_len as u64); // All of the key has been exhausted.
 
         // Decode extracted value
         let (dec_value_offset, dec_value_len) = rlp::decode0(extracted_value);
