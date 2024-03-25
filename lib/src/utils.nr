@@ -8,7 +8,7 @@ pub(crate) fn memcpy<N, M>(dest: &mut [u8; N], src: [u8; M], offset: u64)
 {
     for i in 0..N
     {
-        (*dest)[i] = src[offset+i];
+        (*dest)[i] = src[offset + i];
     }
 }
 
@@ -25,7 +25,7 @@ pub(crate) fn assert_subarray<N, M>(subarray: [u8; N], array: [u8; M], len: u64,
     for i in 0..N
     {
         if i < len {
-            assert(subarray[i] == array[offset+i], "Arrays do not match at specified offset");
+            assert(subarray[i] == array[offset + i], "Arrays do not match at specified offset");
         }
     }
 }
@@ -78,9 +78,9 @@ pub(crate) fn left_byte_shift<N>(input: [u8; N], n: u64) -> [u8; N]
 
     for i in 0..N
     {
-        // Restrict indices to be shifted, i.e. ∀i: i+n < N, out[i] ← input[i+n].
-        let index_ind = (((i+n) as u32) < (N as u32)) as u64;
-        out[i] = (index_ind as u8) * input[index_ind * (i+n)];
+        // Restrict indices to be shifted, i.e. ∀i: i + n < N, out[i] ← input[i + n].
+        let index_ind = (((i + n) as u32) < (N as u32)) as u64;
+        out[i] = (index_ind as u8) * input[index_ind * (i + n)];
     }
 
     out
