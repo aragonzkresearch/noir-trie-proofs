@@ -4,7 +4,6 @@ use crate::{
     utils::{memcpy, byte_value, assert_subarray},
     node::{key_as_nibbles, verify_internal_node, verify_node_hash, resolve2}
 };
-use dep::std::hash::keccak256;
 use crate::rlp;
 
 /// Type alias for receipt proofs. Assumes value is left-padded with zeros.
