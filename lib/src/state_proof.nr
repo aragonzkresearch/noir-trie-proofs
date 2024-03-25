@@ -74,7 +74,7 @@ impl<PROOF_LEN, MAX_VALUE_LEN> TrieProof<20, PROOF_LEN, MAX_VALUE_LEN>
         assert(node_type == LEAF);
 
         assert((extracted_value_length as u32) <= (MAX_VALUE_LEN as u32)); // Extracted value should fit in a byte array of length MAX_ACCOUNT_STATE_LENGTH.
-        assert(terminal_key_ptr == 2*key_len as u64); // All of the key has been exhausted.
+        assert(terminal_key_ptr == 2 * key_len as u64); // All of the key has been exhausted.
 
         // No need to decode data, but it ought to be a list.
         assert(extracted_value[0] >= 0xc0);

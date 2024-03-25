@@ -223,7 +223,7 @@ pub fn decode1_small_lis<N, NUM_FIELDS>(input: [u8; N]) -> RLP_List<NUM_FIELDS> 
         let field_off = 1 - single_byte_ind; // If `header` < 0x80, then we are dealing with a single byte whose value
         // is given by header. Else, the string begins at the following index.
 
-        let field_len = single_byte_ind*1 + (1 - single_byte_ind) * (wrapping_sub(header, 0x80) as u64); // Single byte means len = 1,
+        let field_len = single_byte_ind * 1 + (1 - single_byte_ind) * (wrapping_sub(header, 0x80) as u64); // Single byte means len = 1,
         // else subtract 0x80 from the header to determine len.
 
         let total_field_len = field_off + field_len; // Length of field + header

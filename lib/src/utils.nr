@@ -55,7 +55,7 @@ pub(crate) fn byte_value<N>(in_value: [u8; N]) -> ([u8; N], u64)
     {
         let num_bytes_ind = (value_length == 0) as u64;
         let byte_ind = (in_value[i] != 0) as u64;
-        value_length = num_bytes_ind*byte_ind * (N - i) + (1 - num_bytes_ind) * value_length;
+        value_length = num_bytes_ind * byte_ind * (N - i) + (1 - num_bytes_ind) * value_length;
     }
 
     let value = left_byte_shift(in_value, N - value_length);
@@ -78,9 +78,9 @@ pub(crate) fn left_byte_shift<N>(input: [u8; N], n: u64) -> [u8; N]
 
     for i in 0..N
     {
-        // Restrict indices to be shifted, i.e. ∀i: i + n < N, out[i] ← input[i + n].
-        let index_ind = (((i + n) as u32) < (N as u32)) as u64;
-        out[i] = (index_ind as u8) * input[index_ind * (i + n)];
+        // Restrict indices to be shifted, i.e. ∀i: i+n < N, out[i] ← input[i + n].
+        let index_ind = (((i+n) as u32) < (N as u32)) as u64;
+        out[i] = (index_ind as u8)*input[index_ind*(i+n)];
     }
 
     out

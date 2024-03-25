@@ -43,7 +43,7 @@ pub(crate) fn verify_node_hash<N>(node: [u8; N], hash: [u8; HASH_LENGTH])
 
     // Extra safety
     let in_range = ((node_length as u32) > (node.len() as u32)) as u64;
-    let safe_length = in_range*node.len() as u64 + (1 - in_range) * node_length;
+    let safe_length = in_range * node.len() as u64 + (1 - in_range) * node_length;
     
     // Compute Keccak256 hash of node
     let node_hash = keccak256(node, safe_length as u32);
