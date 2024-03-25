@@ -57,7 +57,7 @@ pub(crate) fn verify_node_hash<N>(node: [u8; N], hash: [u8; HASH_LENGTH])
 ///
 /// # Arguments
 /// * `key` - Array of bytes representing a key
-pub(crate) fn key_as_nibbles<KEY_LEN, NIB_LEN>(key: [u8; KEY_LEN]) -> [u8; NIB_LEN]
+pub fn key_as_nibbles<KEY_LEN, NIB_LEN>(key: [u8; KEY_LEN]) -> [u8; NIB_LEN]
 {
     assert(NIB_LEN == 2*KEY_LEN);
     
