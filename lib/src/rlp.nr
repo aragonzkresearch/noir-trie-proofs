@@ -172,7 +172,7 @@ pub fn decode1<N, NUM_FIELDS>(input: [u8; N]) -> RLP_List<NUM_FIELDS> {
         let loop_ind = (offset != total_len) as u64; // Loop indicator: Take action only if there is data left to parse.
 
         // Make sure the index doesn't overshoot
-        let header: [u8; MAX_LEN_IN_BYTES + 1] = take_dot_drop(input, offset); // Read element header
+        let header: [u8; MAX_LEN_IN_BYTES + 1] = copy_subarray(input, offset); // Read element header
         let RLP_Header {offset: field_off, length: field_len, data_type: field_type} = decode_len(header); // Decode length of element
         let total_field_len = field_off + field_len; // Length of element + header
 
@@ -299,7 +299,7 @@ fn data_len_test_padded() {
 #[test]
 fn rlp_length_check() {
     // List test case
-    let in0: [u8; MAX_LEN_IN_BYTES + 1] = take_dot_drop([0xc7, 0xc0, 0xc1, 0xc0, 0xc3, 0xc0, 0xc1, 0xc0], 0);
+    let in0: [u8; MAX_LEN_IN_BYTES + 1] = copy_subarray([0xc7, 0xc0, 0xc1, 0xc0, 0xc3, 0xc0, 0xc1, 0xc0], 0);
     let x = decode_len(in0);
     assert(x.offset == 1);
     assert(x.length == 7);
@@ -323,12 +323,12 @@ fn rlp_length_check() {
 }
 
 // Function for selecting M elements of an array starting at index n
-pub fn take_dot_drop<T, N, M>(arr: [T; N], n: u64) -> [T; M] // = drop n . take M
+pub fn copy_subarray<T, N, M>(arr: [T; N], offset: u64) -> [T; M]
 {
     let mut out = [dep::std::unsafe::zeroed(); M];
 
     for i in 0..M {
-        let j = (((i + n) as u64) < N) as u64 * (i + n); // Restrict to proper range and fill with arr[0] otherwise.
+        let j = (((offset + i) as u64) < N) as u64 * (offset + i); // Restrict to proper range and fill with arr[0] otherwise.
         out[i] = arr[j];
     }
 
@@ -338,5 +338,5 @@ pub fn take_dot_drop<T, N, M>(arr: [T; N], n: u64) -> [T; M] // = drop n . take 
 // Strict if function. Leads to fewer constraints than the usual if.
 fn strict_if(pred: bool, x: Field, y: Field) -> Field {
     let pred_f = pred as Field;
-    pred_f * x + (1 - pred_f) * y
+    pred_f*x + (1 - pred_f) * y
 }

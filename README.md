@@ -30,8 +30,8 @@ To streamline RLP decoding, two types are provided:
 
 ### Trie proof verification
 #### Constants
-- `KEY_LENGTH` is the length of a key after hashing, i.e. 32.
-- `NIBBLE_LENGTH` is the length of a key expressed as a series of nibbles after hashing, i.e. 64.
+- `HASH_LENGTH` is the length of a key after hashing, i.e. 32.
+- `HASH_NIBBLE_LENGTH` is the length of a key expressed as a series of nibbles after hashing, i.e. 64.
 - `MAX_TRIE_NODE_LENGTH` is the maximum number of bytes in a trie node under the assumption of 32-byte long keys.
 - `MAX_STORAGE_VALUE_LENGTH` is the maximum number of bytes in a storage slot, i.e. 32.
 - `MAX_ACCOUNT_STATE_LENGTH` is the maximum number of bytes in an account state, i.e. the maximum number of bytes in the value slot of the terminal node of a state proof.
@@ -47,8 +47,8 @@ To streamline RLP decoding, two types are provided:
 - `StateProof<PROOF_LEN>` is a type alias for `TrieProof<20, PROOF_LEN, MAX_ACCOUNT_STATE_LENGTH>`.
 
 #### Methods
-- `fn verify_storage_root(self: TrieProof<32, PROOF_LEN, MAX_VALUE_LEN>, storage_root: [u8; KEY_LENGTH]) -> bool`  takes a storage proof (`self`) and storage root (`storage_root`) as inputs and returns `true` if the proof is successfully verified. `PROOF_LEN` is subject to the restrictions explained above and `MAX_VALUE_LEN <= 32` should be large enough to encapsulate the value that the key resolves to in the proof, which is encoded as a big-endian byte array.
-- `fn verify_state_root(self: TrieProof<20, PROOF_LEN, MAX_VALUE_LEN>, state_root: [u8; KEY_LENGTH]) -> bool` takes a state proof (`self`) and state root (`state_root`) as inputs and returns `true` if the proof is successfully verified. `PROOF_LEN` is as before, and `MAX_VALUE_LEN <= MAX_ACCOUNT_STATE_LENGTH` should be large enough to encapsulate the value the key resolves to in the proof, which is the RLP-encoded account state associated with the address given by `self.key`.
+- `fn verify_storage_root(self: TrieProof<32, PROOF_LEN, MAX_VALUE_LEN>, storage_root: [u8; HASH_LENGTH]) -> bool`  takes a storage proof (`self`) and storage root (`storage_root`) as inputs and returns `true` if the proof is successfully verified. `PROOF_LEN` is subject to the restrictions explained above and `MAX_VALUE_LEN <= 32` should be large enough to encapsulate the value that the key resolves to in the proof, which is encoded as a big-endian byte array.
+- `fn verify_state_root(self: TrieProof<20, PROOF_LEN, MAX_VALUE_LEN>, state_root: [u8; HASH_LENGTH]) -> bool` takes a state proof (`self`) and state root (`state_root`) as inputs and returns `true` if the proof is successfully verified. `PROOF_LEN` is as before, and `MAX_VALUE_LEN <= MAX_ACCOUNT_STATE_LENGTH` should be large enough to encapsulate the value the key resolves to in the proof, which is the RLP-encoded account state associated with the address given by `self.key`.
 
 #### Examples
 Besides the unit tests, the following examples are provided as integration tests:

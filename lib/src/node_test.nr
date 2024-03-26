@@ -1,4 +1,4 @@
-use crate::const::{NIBBLE_LENGTH};
+use crate::const::{HASH_NIBBLE_LENGTH};
 use crate::node::{key_as_nibbles, verify_internal_node, compact_decode};
 
 #[test]
@@ -10,15 +10,15 @@ fn nibble_check()
 #[test]
 fn compact_decode_test()
 {
-    let (nibble0, len0): ([u8; NIBBLE_LENGTH], u64) = compact_decode([0x11, 0x23, 0x45,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0], 3);
+    let (nibble0, len0): ([u8; HASH_NIBBLE_LENGTH], u64) = compact_decode([0x11, 0x23, 0x45,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0], 3);
     assert(len0 == 5);
     assert([nibble0[0], nibble0[1], nibble0[2], nibble0[3], nibble0[4]] == [1,2,3,4,5]);
 
-    let (nibble1, len1): ([u8; NIBBLE_LENGTH], u64) = compact_decode([0x20, 0x0f, 0x1c, 0xb8, 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0], 4);
+    let (nibble1, len1): ([u8; HASH_NIBBLE_LENGTH], u64) = compact_decode([0x20, 0x0f, 0x1c, 0xb8, 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0], 4);
     assert(len1 == 6);
     assert([nibble1[0], nibble1[1], nibble1[2], nibble1[3], nibble1[4], nibble1[5]] == [0,15,1,12,11,8]);
 
-    let (nibble2, len2): ([u8; NIBBLE_LENGTH], u64) = compact_decode([0x3f, 0x1c, 0xb8, 0x99, 0xab, 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0], 3);
+    let (nibble2, len2): ([u8; HASH_NIBBLE_LENGTH], u64) = compact_decode([0x3f, 0x1c, 0xb8, 0x99, 0xab, 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0], 3);
     assert(len2 == 5);
     assert([nibble2[0], nibble2[1], nibble2[2], nibble2[3], nibble2[4]] == [15,1,12,11,8]);
     

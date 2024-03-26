@@ -1,6 +1,6 @@
 use crate::{
     trie_proof::TrieProof, 
-    const::NIBBLE_LENGTH,
+    const::HASH_NIBBLE_LENGTH,
 };
 
 // Trie proof tests
