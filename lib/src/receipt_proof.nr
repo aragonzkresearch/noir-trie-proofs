@@ -58,7 +58,7 @@ impl<PROOF_LEN, RECEIPT_RLP_LENGTH> TrieProof<3, PROOF_LEN, RECEIPT_RLP_LENGTH>
     /// * `depth` - Depth of proof path
     fn verify_receipt_leaf_node(self, extracted_hash: [u8; HASH_LENGTH], key_len: u64, key_ptr: u64, key_nibbles: [u8; RLP_IDX_KEY_NIBBLE_LENGTH]) 
     {
-        let value = self.value;
+        let (value, value_length) = byte_value(self.value);
         
         let mut leaf_node = [0; MAX_TRIE_NODE_LENGTH];
         // Treat final node as the preceding nodes...
@@ -75,7 +75,7 @@ impl<PROOF_LEN, RECEIPT_RLP_LENGTH> TrieProof<3, PROOF_LEN, RECEIPT_RLP_LENGTH>
         assert((extracted_value_length as u32) <= (RECEIPT_RLP_LENGTH as u32), "Receipt root: extracted value must fit in a byte array of length RECEIPT_RLP_LENGTH");
         assert(terminal_key_ptr == 2*key_len as u64, "Receipt root: not all of the key has been exhausted");
 
-        assert(extracted_value_length == RECEIPT_RLP_LENGTH, "Receipt root: extracted value length does not match RECEIPT_RLP_LENGTH");
+        assert(extracted_value_length == value_length, "Receipt root: extracted value length does not match value_length");
         assert_subarray(value, extracted_value, RECEIPT_RLP_LENGTH, 0);
     }
 }
